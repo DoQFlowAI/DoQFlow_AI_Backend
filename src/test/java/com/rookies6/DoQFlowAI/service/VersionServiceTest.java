@@ -51,7 +51,7 @@ class VersionServiceTest {
 	void 버전의_본문을_돌려준다() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 3)).thenReturn(Optional.of(textVersion(3, "1. 목적")));
 
-		VersionContentResponse response = new VersionService(versions, 1_048_576).getContent(document, 3);
+		VersionContentResponse response = new VersionService(versions, null, null, null, 1_048_576).getContent(document, 3);
 
 		assertThat(response.versionNo()).isEqualTo(3);
 		assertThat(response.content()).isEqualTo("1. 목적");
@@ -62,7 +62,7 @@ class VersionServiceTest {
 	void 설정한_상한으로_자른다() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 1)).thenReturn(Optional.of(textVersion(1, "가".repeat(10))));
 
-		VersionContentResponse response = new VersionService(versions, 10).getContent(document, 1);
+		VersionContentResponse response = new VersionService(versions, null, null, null, 10).getContent(document, 1);
 
 		assertThat(response.content()).isEqualTo("가가가");
 		assertThat(response.truncated()).isTrue();
@@ -72,7 +72,7 @@ class VersionServiceTest {
 	void 없는_버전이면_404_DOCUMENT_NOT_FOUND() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 9)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> new VersionService(versions, 1_048_576).getContent(document, 9))
+		assertThatThrownBy(() -> new VersionService(versions, null, null, null, 1_048_576).getContent(document, 9))
 				.isInstanceOf(VersionNotFoundException.class)
 				.extracting(e -> ((VersionNotFoundException) e).getErrorCode())
 				.isEqualTo(ErrorCode.DOCUMENT_NOT_FOUND);

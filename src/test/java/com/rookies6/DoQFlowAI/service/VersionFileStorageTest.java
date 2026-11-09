@@ -48,4 +48,19 @@ class VersionFileStorageTest {
 
 		assertThat(uploadDir.resolve("7").resolve("1").resolve(storedFilename)).doesNotExist();
 	}
+
+	@Test
+	void AI_Module에_넘길_경로는_업로드_디렉터리_기준_상대_경로다() {
+		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
+
+		assertThat(storage.relativePath(7L, 3, "5f1c.pdf")).isEqualTo("7/3/5f1c.pdf");
+	}
+
+	@Test
+	void 저장_파일명으로_업로드_디렉터리_밖을_가리킬_수_없다() {
+		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
+
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> storage.relativePath(7L, 3, "../../../etc/passwd"))
+				.isInstanceOf(IllegalArgumentException.class);
+	}
 }
