@@ -63,13 +63,17 @@ public class VersionService {
 	 * 검증 → 볼륨 저장 → 행 생성 → 201. 하나라도 실패하면 전체를 거부하고 아무것도 남기지 않는다.
 	 * 후처리(VersionProcessor)는 트랜잭션이 커밋된 뒤에 시작한다. 커밋 전에 시작하면 다른 스레드가 아직 저장되지 않은 행을 못 본다.
 	 *
-	 * @param document AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
-	 * @param files    요청의 files (배열 순서 = 버전 순서)
+	 * 문서는 이 트랜잭션 안에서 다시 읽는다. 트랜잭션 밖에서 읽은 객체를 받으면
+	 * current_version_no·status 변경이 DB에 저장되지 않는다 (통합 테스트로 확인).
+	 *
+	 * @param documentId AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
+	 * @param files      요청의 files (배열 순서 = 버전 순서)
 	 * @throws com.rookies6.DoQFlowAI.exception.UploadValidationException 검증 실패 (400, 20MB 초과는 413)
+	 * @throws DocumentNotFoundException 없는 문서 (404)
 	 */
 	@Transactional
-	public VersionUploadResponse uploadBatch(Document document, List<MultipartFile> files) {
-		Long documentId = document.getId();
+	public VersionUploadResponse uploadBatch(Long documentId, List<MultipartFile> files) {
+		Document document = documents.findById(documentId).orElseThrow(() -> new DocumentNotFoundException(documentId));
 		DocumentVersion previous = versions.findTopByDocumentIdOrderByVersionNoDesc(documentId).orElse(null);
 		List<ValidatedFile> validated = validator.validate(files, previous == null ? null : previous.getContentHash());
 
