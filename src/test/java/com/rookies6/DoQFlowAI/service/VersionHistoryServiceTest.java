@@ -14,6 +14,7 @@ import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import com.rookies6.DoQFlowAI.entity.SummaryStatus;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
+import com.rookies6.DoQFlowAI.exception.VersionNotReadyException;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import java.util.List;
 import java.util.Optional;
@@ -152,16 +153,25 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 본문이_아직_없는_버전은_빈_본문으로_비교한다() {
-		DocumentVersion v1 = version(1, "a");
-		DocumentVersion v2 = version(2, null);
-		stubVersion(v1);
-		stubVersion(v2);
+	void 아직_추출_중인_PROCESSING_버전과는_비교하지_않는다() {
+		stubVersion(version(1, "a"));
+		stubVersion(version(2, null)); // 본문 추출 전
 
-		CompareResponse response = service.compare(document, 1, 2);
+		assertThatThrownBy(() -> service.compare(document, 1, 2))
+				.isInstanceOf(VersionNotReadyException.class);
+		assertThatThrownBy(() -> service.compare(document, 2, 1))
+				.isInstanceOf(VersionNotReadyException.class);
+	}
 
-		assertThat(response.toText()).isEmpty();
-		assertThat(response.diffJson()).containsExactly(new DiffBlock("DELETE", 0, 1, 0, 0));
+	@Test
+	void 추출에_실패한_FAILED_버전은_비교_대상에서_제외한다() {
+		DocumentVersion failed = version(2, null);
+		failed.failExtraction();
+		stubVersion(version(1, "a"));
+		stubVersion(failed);
+
+		assertThatThrownBy(() -> service.compare(document, 1, 2))
+				.isInstanceOf(VersionNotReadyException.class);
 	}
 
 	@Test
