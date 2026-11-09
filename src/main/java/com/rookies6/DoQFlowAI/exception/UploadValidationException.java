@@ -9,11 +9,11 @@ package com.rookies6.DoQFlowAI.exception;
 public class UploadValidationException extends RuntimeException {
 
 	/** 실패한 검증 단계와 응답 상태 (Backend 개발 명세서 7 검증 순서)
-	 * FILE_COUNT        2단계 파일이 0개, 11개 이상, 빈 파일
-	 * INVALID_TYPE      3단계 지원하지 않는 확장자 / 문서 계열 매직 넘버 불일치 / 텍스트 계열 UTF-8 디코딩 실패·널 바이트·제어문자
-	 * FILE_TOO_LARGE    4단계 파일당 20MB 초과
-	 * INVALID_FILENAME  5단계 파일명에 경로 구분자, 절대 경로, 널 바이트가 있음
-	 * DUPLICATE_CONTENT 6단계 직전 버전과 내용 해시가 같음
+	 * FILE_COUNT        파일이 0개, 11개 이상, 빈 파일
+	 * INVALID_TYPE      지원하지 않는 확장자 / 문서 계열 매직 넘버 불일치 / 텍스트 계열 UTF-8 디코딩 실패·널 바이트·제어문자
+	 * FILE_TOO_LARGE    파일당 20MB 초과
+	 * INVALID_FILENAME  파일명에 경로 구분자, 절대 경로, 널 바이트가 있음
+	 * DUPLICATE_CONTENT 직전 버전과 내용 해시가 같음
 	 */
 	public enum Reason {
 		FILE_COUNT(400, "VALIDATION_ERROR"),
