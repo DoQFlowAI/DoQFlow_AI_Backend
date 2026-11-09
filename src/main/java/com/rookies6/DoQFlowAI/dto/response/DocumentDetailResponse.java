@@ -14,7 +14,7 @@ import java.util.List;
  * uploadedBy{name, email, rankLevel}, versions ]
  * <API 9>
  *
- * 등록자 정보는 읽기 권한자 전원에게 이름·이메일·직급을 모두 내려보낸다 (API 설계서 5.4).
+ * 등록자 정보는 읽기 권한자 전원에게 이름·이메일·직급을 모두 내려보낸다
  * 열람자 목록은 넣지 않는다 (API 13).
  */
 public record DocumentDetailResponse(
