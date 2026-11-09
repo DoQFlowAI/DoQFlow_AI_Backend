@@ -29,7 +29,7 @@ class DocumentResponseJsonTest {
 
 	@BeforeEach
 	void setUp() {
-		AppUser owner = AppUser.builder().email("hong@example.com").passwordHash("x").name("홍서연").rankLevel(2).build();
+		AppUser owner = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
 		ReflectionTestUtils.setField(owner, "id", OWNER_ID);
 
 		document = Document.builder().name("휴가 규정").uploadedBy(owner).build();
@@ -42,7 +42,7 @@ class DocumentResponseJsonTest {
 	void 목록_항목은_등록자_이름과_직급만_묶어서_내린다() {
 		String json = mapper.writeValueAsString(DocumentSummaryResponse.of(document, OWNER_ID));
 
-		assertThat(json).contains("\"uploadedBy\":{\"name\":\"홍서연\",\"rankLevel\":2}");
+		assertThat(json).contains("\"uploadedBy\":{\"name\":\"팀장\",\"rankLevel\":2}");
 		assertThat(json).contains("\"owned\":true");
 		assertThat(json).contains("\"updatedAt\":\"2026-11-06T09:30:00Z\"");
 		assertThat(json).doesNotContain("email", "uploadedByName");
@@ -52,7 +52,7 @@ class DocumentResponseJsonTest {
 	void 단건은_등록자_이메일까지_묶어서_내린다() {
 		String json = mapper.writeValueAsString(DocumentDetailResponse.of(document, 99L, List.of()));
 
-		assertThat(json).contains("\"uploadedBy\":{\"name\":\"홍서연\",\"email\":\"hong@example.com\",\"rankLevel\":2}");
+		assertThat(json).contains("\"uploadedBy\":{\"name\":\"팀장\",\"email\":\"lead@example.com\",\"rankLevel\":2}");
 		assertThat(json).contains("\"owned\":false");
 		assertThat(json).doesNotContain("uploadedByEmail", "storedFilename");
 	}
