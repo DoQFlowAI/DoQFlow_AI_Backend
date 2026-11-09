@@ -4,7 +4,9 @@ import com.rookies6.DoQFlowAI.dto.response.CompareResponse;
 import com.rookies6.DoQFlowAI.dto.response.HistoryResponse;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
+import com.rookies6.DoQFlowAI.entity.VersionStatus;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
+import com.rookies6.DoQFlowAI.exception.VersionNotReadyException;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +50,8 @@ public class VersionHistoryService {
 	public CompareResponse compare(Document document, int fromNo, int toNo) {
 		DocumentVersion from = findVersion(document, fromNo);
 		DocumentVersion to = findVersion(document, toNo);
+		requireReady(from);
+		requireReady(to);
 
 		List<DiffBlock> blocks = isAdjacentWithStoredDiff(document, fromNo, to)
 				? diffService.fromJson(to.getDiffJson())
@@ -65,6 +69,13 @@ public class VersionHistoryService {
 	private DocumentVersion findVersion(Document document, int versionNo) {
 		return versions.findByDocumentIdAndVersionNo(document.getId(), versionNo)
 				.orElseThrow(VersionNotFoundException::new);
+	}
+
+	// <API 24> FAILED는 비교 대상에서 제외하고(DB 설계서 4.3), 본문이 아직 없는 PROCESSING도 400으로 거부한다.
+	private static void requireReady(DocumentVersion version) {
+		if (version.getStatus() != VersionStatus.READY) {
+			throw new VersionNotReadyException();
+		}
 	}
 
 	// from이 to의 실제 직전 버전이고, to에 저장된 diff가 있으면 재사용할 수 있다.
