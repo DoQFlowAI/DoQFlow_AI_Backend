@@ -39,11 +39,13 @@ class Utf8TruncatorTest {
 
 	@Test
 	void 이모지처럼_char_두_개인_글자도_반으로_자르지_않는다() {
-		String text = "ab" + " ".repeat(3); // 2 + 4*3 = 14바이트
+		// 이모지를 직접 쓰면 편집기·터미널에서 깨질 수 있어 유니코드 이스케이프로 쓴다 (U+1F600, UTF-8 4바이트)
+		String emoji = " ";
+		String text = "ab" + emoji.repeat(3); // 2 + 4*3 = 14바이트
 
 		Utf8Truncator.Result result = Utf8Truncator.truncate(text, 9); // ab + 이모지 1개(6바이트)까지
 
-		assertThat(result.content()).isEqualTo("ab");
+		assertThat(result.content()).isEqualTo("ab" + emoji);
 		assertThat(result.truncated()).isTrue();
 	}
 
