@@ -5,14 +5,17 @@ import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import com.rookies6.DoQFlowAI.entity.VersionStatus;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 
 /** 문서 단건 응답 (GET, /documents/{documentId})
  * [documentId, name, description, currentVersionNo, status, owned,
- * uploadedByName, uploadedByEmail, uploadedByRankLevel, versions ]
+ * uploadedBy{name, email, rankLevel}, versions ]
  * <API 9>
+ *
+ * 등록자 정보는 읽기 권한자 전원에게 이름·이메일·직급을 모두 내려보낸다
+ * 열람자 목록은 넣지 않는다 (API 13).
  */
 public record DocumentDetailResponse(
 		Long documentId,
@@ -21,19 +24,25 @@ public record DocumentDetailResponse(
 		int currentVersionNo,
 		DocumentStatus status,
 		boolean owned,
-		String uploadedByName,
-		String uploadedByEmail,
-		int uploadedByRankLevel,
+		UploadedBy uploadedBy,
 		List<VersionItem> versions
 )
 
 {
+	// 단건 응답의 등록자 정보 { "name": "홍서연", "email": "hong@example.com", "rankLevel": 2 }
+	public record UploadedBy(
+			String name,
+			String email,
+			int rankLevel
+	) {
+	}
+
 	//문서 단건 응답의 버전 항목,  storedFilename은 일부러 제외한다 (서버 저장 정보 노출 방지).
 	public record VersionItem(
 			int versionNo,
 			String originalFilename,
 			VersionStatus status,
-			LocalDateTime createdAt
+			Instant createdAt
 	) {
 
 		public static VersionItem from(DocumentVersion version) {
@@ -41,7 +50,7 @@ public record DocumentDetailResponse(
 					version.getVersionNo(),
 					version.getOriginalFilename(),
 					version.getStatus(),
-					version.getCreatedAt());
+					ApiTime.toInstant(version.getCreatedAt()));
 		}
 	}
 
@@ -56,9 +65,7 @@ public record DocumentDetailResponse(
 				document.getCurrentVersionNo(),
 				document.getStatus(),
 				uploader.getId().equals(meId),
-				uploader.getName(),
-				uploader.getEmail(),
-				uploader.getRankLevel(),
+				new UploadedBy(uploader.getName(), uploader.getEmail(), uploader.getRankLevel()),
 				versions.stream().map(VersionItem::from).toList());
 	}
 }

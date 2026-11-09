@@ -1,7 +1,7 @@
 package com.rookies6.DoQFlowAI.dto.response;
 
 import com.rookies6.DoQFlowAI.entity.Document;
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 
 // 문서 수정 응답 [ documentId, name, description, updatedAt ]  <API 10>
@@ -9,7 +9,7 @@ public record DocumentUpdateResponse(
 		Long documentId,
 		String name,
 		String description,
-		LocalDateTime updatedAt
+		Instant updatedAt
 ) {
 
 	/**
@@ -21,6 +21,6 @@ public record DocumentUpdateResponse(
 				document.getId(),
 				document.getName(),
 				document.getDescription(),
-				document.getUpdatedAt());
+				ApiTime.toInstant(document.getUpdatedAt()));
 	}
 }
