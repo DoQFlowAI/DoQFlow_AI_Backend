@@ -4,7 +4,13 @@ import com.rookies6.DoQFlowAI.exception.UploadValidationException;
 import com.rookies6.DoQFlowAI.exception.UploadValidationException.Reason;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.UncheckedIOException;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -13,6 +19,9 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -24,7 +33,10 @@ import org.springframework.web.multipart.MultipartFile;
  *
  * (VersionService) 등록자 아니면 403
  * 파일 개수 1~10, 빈 파일 거부 → 400
- * 확장자 + 매직 넘버 (PDF {@code %PDF}, DOCX {@code PK\x03\x04}) → 400<
+ * 확장자로 계열 판정 → 400
+ *   문서 계열(pdf docx): 매직 넘버 대조 (PDF {@code %PDF}, DOCX {@code PK\x03\x04})
+ *   텍스트 계열(그 외 8종): 전체를 UTF-8로 디코딩, 널 바이트와 \t·\r·\n 외 C0 제어문자 거부
+ *   브라우저가 보낸 Content-Type은 신뢰하지 않는다.
  * 파일당 20MB → 413
  * 파일명에 경로 구분자, 절대 경로, 널 바이트 → 400
  * 직전 버전과 content_hash(SHA-256) 동일 → 400
@@ -37,24 +49,45 @@ public class UploadFileValidator {
 	static final long MAX_FILE_SIZE = 20L * 1024 * 1024;
 
 	private final int maxFiles;
+	// 설정(app.upload.text-ext, doc-ext)에 있는 확장자만 받는다. 아래 FileType에 없는 확장자는 설정에 있어도 받지 않는다.
+	private final Set<String> allowedExtensions;
 
-	public UploadFileValidator(@Value("${app.upload.max-files:10}") int maxFiles) {
+	public UploadFileValidator(
+			@Value("${app.upload.max-files:10}") int maxFiles,
+			@Value("${app.upload.text-ext:txt,md,csv,json,xml,yaml,yml,log}") List<String> textExtensions,
+			@Value("${app.upload.doc-ext:pdf,docx}") List<String> docExtensions) {
 		this.maxFiles = maxFiles;
+		this.allowedExtensions = Stream.concat(textExtensions.stream(), docExtensions.stream())
+				.map(ext -> ext.trim().toLowerCase(Locale.ROOT))
+				.collect(Collectors.toUnmodifiableSet());
 	}
 
-	// 허용 파일 형식. 저장할 MIME 타입은 클라이언트 값이 아니라 여기서 정한다.
+	/**
+	 * 지원 파일 형식 (API 설계서 2.6, DB 설계서 4.3). 저장할 MIME 타입은 클라이언트 값이 아니라 여기서 정한다.
+	 * html·svg는 마크업으로 해석되면 저장형 XSS가 되므로 일부러 넣지 않는다.
+	 */
 	enum FileType {
-		PDF("pdf", "application/pdf", new byte[] {'%', 'P', 'D', 'F'}),
-		DOCX("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-				new byte[] {'P', 'K', 0x03, 0x04});
+		PDF("pdf", "application/pdf", FileKind.DOC, new byte[] {'%', 'P', 'D', 'F'}),
+		DOCX("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", FileKind.DOC,
+				new byte[] {'P', 'K', 0x03, 0x04}),
+		TXT("txt", "text/plain", FileKind.TEXT, null),
+		MD("md", "text/markdown", FileKind.TEXT, null),
+		CSV("csv", "text/csv", FileKind.TEXT, null),
+		JSON("json", "application/json", FileKind.TEXT, null),
+		XML("xml", "application/xml", FileKind.TEXT, null),
+		YAML("yaml", "application/yaml", FileKind.TEXT, null),
+		YML("yml", "application/yaml", FileKind.TEXT, null),
+		LOG("log", "text/plain", FileKind.TEXT, null);
 
 		private final String extension;
 		private final String mimeType;
-		private final byte[] magic;
+		private final FileKind kind;
+		private final byte[] magic; // 텍스트 계열은 매직 넘버가 없다
 
-		FileType(String extension, String mimeType, byte[] magic) {
+		FileType(String extension, String mimeType, FileKind kind, byte[] magic) {
 			this.extension = extension;
 			this.mimeType = mimeType;
+			this.kind = kind;
 			this.magic = magic;
 		}
 
@@ -70,8 +103,9 @@ public class UploadFileValidator {
 	 *
 	 * @param file             업로드된 원본 파일
 	 * @param originalFilename 표시용 원본 파일명 (저장 경로에는 쓰지 않는다)
-	 * @param extension        소문자 확장자 (pdf, docx)
+	 * @param extension        소문자 확장자 (pdf, docx, txt, md ...)
 	 * @param mimeType         확장자로 정한 MIME 타입
+	 * @param kind             계열. TEXT면 업로드 트랜잭션에서 본문을 채우고 READY, DOC면 PROCESSING
 	 * @param size             파일 크기 (byte)
 	 * @param contentHash      파일 내용의 SHA-256 (64자리 16진수)
 	 */
@@ -80,6 +114,7 @@ public class UploadFileValidator {
 			String originalFilename,
 			String extension,
 			String mimeType,
+			FileKind kind,
 			long size,
 			String contentHash
 	) {
@@ -100,17 +135,20 @@ public class UploadFileValidator {
 		}
 		for (MultipartFile file : files) {
 			if (file == null || file.isEmpty()) {
-				throw new UploadValidationException(Reason.EMPTY_FILE);
+				throw new UploadValidationException(Reason.FILE_COUNT);
 			}
 		}
 
-		// 3단계: 확장자 + 매직 넘버 (확장자만 바꾼 위장 파일 차단)
+		// 3단계: 확장자로 계열 판정 후 계열별 내용 검증 (확장자만 바꾼 위장 파일 차단). 한 요청에 두 계열이 섞여도 파일마다 따로 판정
 		List<FileType> types = new ArrayList<>();
 		for (MultipartFile file : files) {
-			FileType type = FileType.fromExtension(extensionOf(file.getOriginalFilename()))
-					.orElseThrow(() -> new UploadValidationException(Reason.UNSUPPORTED_TYPE));
-			if (!startsWith(file, type.magic)) {
-				throw new UploadValidationException(Reason.UNSUPPORTED_TYPE);
+			String extension = extensionOf(file.getOriginalFilename());
+			FileType type = FileType.fromExtension(extension)
+					.filter(t -> allowedExtensions.contains(t.extension))
+					.orElseThrow(() -> new UploadValidationException(Reason.INVALID_TYPE));
+			boolean valid = type.kind == FileKind.DOC ? startsWith(file, type.magic) : isPlainUtf8Text(file);
+			if (!valid) {
+				throw new UploadValidationException(Reason.INVALID_TYPE);
 			}
 			types.add(type);
 		}
@@ -136,11 +174,11 @@ public class UploadFileValidator {
 			MultipartFile file = files.get(i);
 			String hash = sha256(file);
 			if (hash.equals(previous)) {
-				throw new UploadValidationException(Reason.SAME_AS_PREVIOUS);
+				throw new UploadValidationException(Reason.DUPLICATE_CONTENT);
 			}
 			FileType type = types.get(i);
 			result.add(new ValidatedFile(file, file.getOriginalFilename(), type.extension, type.mimeType,
-					file.getSize(), hash));
+					type.kind, file.getSize(), hash));
 			previous = hash;
 		}
 		return result;
@@ -155,11 +193,38 @@ public class UploadFileValidator {
 		return dot < 0 ? "" : filename.substring(dot + 1).toLowerCase(Locale.ROOT);
 	}
 
-	/** 파일 앞부분이 매직 넘버와 같은지 확인한다. */
+	/** 문서 계열: 파일 앞부분이 매직 넘버와 같은지 확인한다. */
 	private static boolean startsWith(MultipartFile file, byte[] magic) {
 		try (InputStream in = file.getInputStream()) {
 			byte[] head = in.readNBytes(magic.length);
 			return Arrays.equals(head, magic);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	/**
+	 * 텍스트 계열: 파일 전체가 올바른 UTF-8이고, 널 바이트와 \t·\r·\n 외 C0 제어문자(0x00~0x1F)가 없는지 확인한다.
+	 * 텍스트 계열은 매직 넘버가 없으므로 내용 전체를 읽는다. 메모리에 다 올리지 않고 나눠서 읽는다.
+	 */
+	private static boolean isPlainUtf8Text(MultipartFile file) {
+		CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+				.onMalformedInput(CodingErrorAction.REPORT)
+				.onUnmappableCharacter(CodingErrorAction.REPORT);
+		try (Reader reader = new InputStreamReader(file.getInputStream(), decoder)) {
+			char[] buffer = new char[8192];
+			int read;
+			while ((read = reader.read(buffer)) > 0) {
+				for (int i = 0; i < read; i++) {
+					char c = buffer[i];
+					if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
+						return false; // 널 바이트(0x00) 포함
+					}
+				}
+			}
+			return true;
+		} catch (CharacterCodingException e) {
+			return false; // UTF-8이 아님
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
