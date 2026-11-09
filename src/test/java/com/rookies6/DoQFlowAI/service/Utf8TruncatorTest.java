@@ -38,14 +38,15 @@ class Utf8TruncatorTest {
 	}
 
 	@Test
-	void 이모지처럼_char_두_개인_글자도_반으로_자르지_않는다() {
-		// 이모지를 직접 쓰면 편집기·터미널에서 깨질 수 있어 유니코드 이스케이프로 쓴다 (U+1F600, UTF-8 4바이트)
-		String emoji = " ";
-		String text = "ab" + emoji.repeat(3); // 2 + 4*3 = 14바이트
+	void 서로게이트_쌍_문자도_반으로_자르지_않는다() {
+		// UTF-8 4바이트, Java char 2개인 문자(U+1F600). 글자를 소스에 직접 쓰면 편집기에서 깨질 수 있어 코드 번호로 만든다.
+		String wide = new String(Character.toChars(0x1F600));
+		String text = "ab" + wide.repeat(3); // 2 + 4*3 = 14바이트
 
-		Utf8Truncator.Result result = Utf8Truncator.truncate(text, 9); // ab + 이모지 1개(6바이트)까지
+		Utf8Truncator.Result result = Utf8Truncator.truncate(text, 9); // ab + 1글자(6바이트)까지
 
-		assertThat(result.content()).isEqualTo("ab" + emoji);
+		assertThat(wide).hasSize(2);
+		assertThat(result.content()).isEqualTo("ab" + wide);
 		assertThat(result.truncated()).isTrue();
 	}
 
