@@ -28,7 +28,7 @@ public class DiffService {
 	 *
 	 * @param fromText 이전 버전 본문 (null이면 빈 본문으로 본다)
 	 * @param toText   다음 버전 본문 (null이면 빈 본문으로 본다)
-	 * @return EQUAL을 뺀 변경 블록 목록ㅎ
+	 * @return EQUAL을 뺀 변경 블록 목록
 	 */
 	public List<DiffBlock> diff(String fromText, String toText) {
 		List<String> from = toLines(fromText);
