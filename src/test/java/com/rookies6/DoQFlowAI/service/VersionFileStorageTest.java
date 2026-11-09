@@ -7,11 +7,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+
+import org.apiguardian.api.API;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 
-/** [API-18 V-01] 업로드 파일 저장·삭제 단위 테스트 — 임시 폴더를 업로드 디렉터리로 쓴다. */
+/// 업로드 파일 저장·삭제 단위 테스트 <API 18>
 class VersionFileStorageTest {
 
 	@TempDir
@@ -20,7 +22,7 @@ class VersionFileStorageTest {
 	private ValidatedFile validated(String name, String body) {
 		MockMultipartFile file = new MockMultipartFile("files", name, "application/pdf",
 				("%PDF-1.7\n" + body).getBytes(StandardCharsets.UTF_8));
-		return new UploadFileValidator(10).validate(List.of(file), null).get(0);
+		return new UploadFileValidator(10, List.of("txt"), List.of("pdf", "docx")).validate(List.of(file), null).get(0);
 	}
 
 	@Test
