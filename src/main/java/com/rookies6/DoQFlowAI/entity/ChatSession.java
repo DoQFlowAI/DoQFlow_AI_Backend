@@ -36,4 +36,11 @@ public class ChatSession extends BaseTimeEntity {
 		this.user = user;
 		this.title = title;
 	}
+
+	/** 제목이 비어 있을 때만 채운다. 대화 생성 시에는 비어 있고 첫 질문 앞부분이 제목이 된다 < API 25 > */
+	public void titleIfAbsent(String title) {
+		if (this.title == null) {
+			this.title = title;
+		}
+	}
 }
