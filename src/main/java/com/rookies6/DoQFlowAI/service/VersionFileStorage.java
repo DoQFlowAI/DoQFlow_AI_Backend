@@ -12,7 +12,7 @@ import org.springframework.stereotype.Component;
 
 /** 업로드한 버전 원본 파일의 저장과 삭제 < API 11, API 18 >
  *
- * <p>저장 경로는 {@code {upload-dir}/{documentId}/{versionNo}/{UUID}.{ext}}이다.
+ * 저장 경로는 {@code {upload-dir}/{documentId}/{versionNo}/{UUID}.{ext}}이다.
  * 사용자가 보낸 파일명은 경로에 쓰지 않고, 응답에도 경로를 넣지 않는다. 원문 다운로드 API는 없다.
  */
 @Component
@@ -57,6 +57,16 @@ public class VersionFileStorage {
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}
+	}
+
+	/** AI Module에 넘길 상대 경로 < API 18 >
+	 *
+	 * /internal/extract의 filePath는 업로드 디렉터리 기준 상대 경로다 (AI 모듈 연동 명세서 4.1, 예 {@code 7/3/5f1c.pdf}).
+	 * 두 컨테이너가 같은 볼륨을 다른 위치에 붙일 수 있어 절대 경로를 보내지 않는다. 구분자는 OS와 무관하게 '/'를 쓴다.
+	 */
+	public String relativePath(Long documentId, int versionNo, String storedFilename) {
+		Path target = resolve(documentId, versionNo, storedFilename);
+		return baseDir.relativize(target).toString().replace('\\', '/');
 	}
 
 	private Path resolve(Long documentId, int versionNo, String storedFilename) {
