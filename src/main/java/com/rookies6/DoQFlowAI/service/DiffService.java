@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
-/** 버전 관리 영역 < API 18, API 21, API 22, API 23 >
+/** 버전 관리 영역 < API 18, API 21, API 22, API 24 >
  * LLM이 호출되지 않는 순수 계산 영역
  * 본문은 추출 단계에서 문장 단위로 줄바꿈되어 저장되므로 줄 단위로 비교
  */
