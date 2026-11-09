@@ -39,4 +39,10 @@ public class AuthController {
 	public ApiResponse<TokenResponse> refresh(@Valid @RequestBody TokenRequest request) {
 		return ApiResponse.ok(authService.refresh(request));
 	}
+
+	@PostMapping("/logout")
+	public ApiResponse<Void> logout(@Valid @RequestBody TokenRequest request) {
+		authService.logout(request);
+		return ApiResponse.ok("로그아웃되었습니다.");
+	}
 }

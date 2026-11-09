@@ -161,4 +161,17 @@ public class AuthService {
 		token.revoke();
 		return issueTokens(token.getUser());
 	}
+
+	/**
+	 * 로그아웃 < API 4.4 >
+	 *
+	 * <p>없는 토큰이어도 예외를 던지지 않는다. 로그아웃은 멱등해야 하고,
+	 * 실패를 알려주면 토큰 존재 여부를 확인하는 수단이 된다.
+	 */
+	@Transactional
+	public void logout(TokenRequest req) {
+		tokens.findByTokenHash(sha256(req.refreshToken()))
+				.ifPresent(RefreshToken::revoke);
+	}
+
 }
