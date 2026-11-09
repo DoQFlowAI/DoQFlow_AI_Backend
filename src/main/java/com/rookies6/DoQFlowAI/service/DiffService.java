@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
-/** 버전 관리 영역 < API 18, API 21, API 22, API 23 >
+/** 버전 관리 영역 < API 18, API 21, API 22, API 24 >
  * LLM이 호출되지 않는 순수 계산 영역
  * 본문은 추출 단계에서 문장 단위로 줄바꿈되어 저장되므로 줄 단위로 비교
  */
@@ -31,8 +31,8 @@ public class DiffService {
 	 * @return EQUAL을 뺀 변경 블록 목록
 	 */
 	public List<DiffBlock> diff(String fromText, String toText) {
-		List<String> from = toLines(fromText);
-		List<String> to = toLines(toText);
+		List<String> from = lines(fromText);
+		List<String> to = lines(toText);
 		return DiffUtils.diff(from, to).getDeltas().stream()
 				.map(delta -> new DiffBlock(
 						delta.getType().name(),
@@ -53,7 +53,11 @@ public class DiffService {
 		return jsonMapper.readValue(json, BLOCK_LIST);
 	}
 
-	private static List<String> toLines(String text) {
+	/**
+	 * diff를 계산할 때 쓰는 줄 나누기. DiffBlock의 줄 위치는 이 결과 기준이다.
+	 * /internal/history에 보낼 블록 텍스트(AiHistory.Block.of)도 같은 방식으로 나눠야 줄이 맞는다.
+	 */
+	public static List<String> lines(String text) {
 		return text == null ? List.of() : text.lines().toList();
 	}
 }

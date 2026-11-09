@@ -1,5 +1,6 @@
 package com.rookies6.DoQFlowAI.service;
 
+import com.rookies6.DoQFlowAI.config.RestClientConfig;
 import com.rookies6.DoQFlowAI.dto.ai.AiDeleteIndex;
 import com.rookies6.DoQFlowAI.dto.ai.AiExtract;
 import com.rookies6.DoQFlowAI.dto.ai.AiHistory;
@@ -8,6 +9,7 @@ import com.rookies6.DoQFlowAI.exception.AiModuleException;
 import java.util.List;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -21,9 +23,14 @@ import org.springframework.web.client.RestClientException;
 public class AiClientService {
 
 	private final RestClient aiRestClient;
+	// /internal/history 전용 (읽기 180초)
+	private final RestClient aiHistoryRestClient;
 
-	public AiClientService(RestClient aiRestClient) {
+	public AiClientService(
+			@Qualifier(RestClientConfig.AI_REST_CLIENT) RestClient aiRestClient,
+			@Qualifier(RestClientConfig.AI_HISTORY_REST_CLIENT) RestClient aiHistoryRestClient) {
 		this.aiRestClient = aiRestClient;
+		this.aiHistoryRestClient = aiHistoryRestClient;
 	}
 
 	/**
@@ -33,16 +40,20 @@ public class AiClientService {
 	 */
 	public AiExtract.Response extract(Long versionId, String filePath, String mimeType) {
 		AiExtract.Request request = new AiExtract.Request(versionId, filePath, mimeType);
-		return call("extract", () -> post("/internal/extract", request, AiExtract.Response.class));
+		return call("extract", () -> post(aiRestClient, "/internal/extract", request, AiExtract.Response.class));
 	}
 
 	/**
+	 * 인접 구간 변경 요약 (AI 모듈 연동 명세서 4.5). 읽기 제한 180초 클라이언트를 쓴다.
+	 * 후처리에서는 구간 하나씩 담아 호출한다. 구간이 많아도 대기 시간이 구간 하나 기준으로 묶이고,
+	 * 한 구간이 타임아웃돼도 그 구간만 FAILED가 된다.
+	 *
 	 * @param documentId 문서 ID
-	 * @param versionIds 요약할 버전 ID 목록 (버전 순서)
+	 * @param segments   요약할 구간 (변경 블록이 있는 구간만)
 	 */
-	public AiHistory.Response history(Long documentId, List<Long> versionIds) {
-		AiHistory.Request request = new AiHistory.Request(documentId, versionIds);
-		return call("history", () -> post("/internal/history", request, AiHistory.Response.class));
+	public AiHistory.Response history(Long documentId, List<AiHistory.RequestSegment> segments) {
+		AiHistory.Request request = new AiHistory.Request(documentId, segments);
+		return call("history", () -> post(aiHistoryRestClient, "/internal/history", request, AiHistory.Response.class));
 	}
 
 	/**
@@ -52,7 +63,7 @@ public class AiClientService {
 	 */
 	public AiIndex.Response index(Long documentId, Long versionId, int versionNo) {
 		AiIndex.Request request = new AiIndex.Request(documentId, versionId, versionNo);
-		return call("index", () -> post("/internal/index", request, AiIndex.Response.class));
+		return call("index", () -> post(aiRestClient, "/internal/index", request, AiIndex.Response.class));
 	}
 
 	/**
@@ -70,8 +81,8 @@ public class AiClientService {
 	}
 
 	/// JSON 본문 전송
-	private <T> T post(String path, Object request, Class<T> responseType) {
-		return aiRestClient.post()
+	private static <T> T post(RestClient client, String path, Object request, Class<T> responseType) {
+		return client.post()
 				.uri(path)
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(request)
