@@ -2,7 +2,6 @@ package com.rookies6.DoQFlowAI.dto.response;
 
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -23,14 +22,7 @@ public record HistoryResponse(
 			return new VersionItem(
 					version.getVersionNo(),
 					version.getOriginalFilename(),
-					toInstant(version));
-		}
-
-		// DB의 DATETIME은 서버 시간대로 저장되므로, 서버 시간대 기준으로 UTC 시각(Instant)으로 바꾼다.
-		private static Instant toInstant(DocumentVersion version) {
-			return version.getCreatedAt() == null
-					? null
-					: version.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant();
+					ApiTime.toInstant(version.getCreatedAt()));
 		}
 	}
 

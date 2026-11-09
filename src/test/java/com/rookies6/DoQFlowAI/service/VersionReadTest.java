@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
-/** 버전 목록·단건 단위 테스트 < API 19, API 20 > — API 설계서 5.11 */
+/** 버전 목록·단건 단위 테스트 < API 19, API 20 >  */
 class VersionReadTest {
 
 	private static final long DOCUMENT_ID = 7L;
@@ -37,7 +37,7 @@ class VersionReadTest {
 	@BeforeEach
 	void setUp() {
 		versions = mock(DocumentVersionRepository.class);
-		service = new VersionService(versions, null, null, null, 1_048_576);
+		service = new VersionService(null, versions, null, null, null, 1_048_576);
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
 		document = Document.builder().name("운영지침").uploadedBy(lead).build();
 		ReflectionTestUtils.setField(document, "id", DOCUMENT_ID);

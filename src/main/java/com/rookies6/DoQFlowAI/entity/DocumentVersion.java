@@ -109,4 +109,13 @@ public class DocumentVersion extends BaseTimeEntity {
 		this.changeType = changeType;
 		this.changeSummary = changeSummary;
 	}
+
+	/** 직전 버전이 지워져 구간이 끊겼을 때 변경점을 비운다. 새 구간은 후처리에서 다시 계산한다 < API 21 > */
+	public void clearChange() {
+		this.diffJson = null;
+		this.changeCount = null;
+		this.summaryStatus = null;
+		this.changeType = null;
+		this.changeSummary = null;
+	}
 }

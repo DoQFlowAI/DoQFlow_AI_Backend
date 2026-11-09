@@ -46,10 +46,10 @@ class DocumentServiceTest {
 	void setUp() {
 		documents = mock(DocumentRepository.class);
 		versions = mock(DocumentVersionRepository.class);
-		service = new DocumentService(documents, versions);
+		service = new DocumentService(documents, versions, null, null);
 
-		lead = user(1L, "lead@example.com", "홍서연", 2);
-		staff = user(2L, "staff@example.com", "김정현", 1);
+		lead = user(1L, "lead@example.com", "팀장", 2);
+		staff = user(2L, "staff@example.com", "사원", 1);
 	}
 
 	private static AppUser user(long id, String email, String name, int rankLevel) {
@@ -82,7 +82,7 @@ class DocumentServiceTest {
 		assertThat(response.size()).isEqualTo(20);
 		assertThat(response.content()).extracting(DocumentSummaryResponse::owned).containsExactly(true, false);
 		assertThat(response.content().get(1).uploadedBy())
-				.isEqualTo(new DocumentSummaryResponse.UploadedBy("김정현", 1));
+				.isEqualTo(new DocumentSummaryResponse.UploadedBy("사원", 1));
 	}
 
 	@Test
@@ -108,7 +108,7 @@ class DocumentServiceTest {
 
 		assertThat(response.owned()).isFalse();
 		assertThat(response.uploadedBy())
-				.isEqualTo(new DocumentDetailResponse.UploadedBy("홍서연", "lead@example.com", 2));
+				.isEqualTo(new DocumentDetailResponse.UploadedBy("팀장", "lead@example.com", 2));
 		assertThat(response.versions()).extracting(DocumentDetailResponse.VersionItem::originalFilename)
 				.containsExactly("v1.pdf");
 	}

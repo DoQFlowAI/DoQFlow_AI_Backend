@@ -6,7 +6,10 @@ import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
+import com.rookies6.DoQFlowAI.exception.DeleteNotAllowedException;
+import com.rookies6.DoQFlowAI.exception.DocumentNotFoundException;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
+import com.rookies6.DoQFlowAI.repository.DocumentRepository;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import com.rookies6.DoQFlowAI.service.UploadFileValidator.ValidatedFile;
 import java.io.IOException;
@@ -19,8 +22,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 /**
@@ -34,6 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Transactional(readOnly = true)
 public class VersionService {
 
+	private final DocumentRepository documents;
 	private final DocumentVersionRepository versions;
 	private final UploadFileValidator validator;
 	private final VersionFileStorage storage;
@@ -41,11 +43,13 @@ public class VersionService {
 	private final int viewMaxBytes;
 
 	public VersionService(
+			DocumentRepository documents,
 			DocumentVersionRepository versions,
 			UploadFileValidator validator,
 			VersionFileStorage storage,
 			VersionProcessor processor,
 			@Value("${app.upload.view-max-bytes:1048576}") int viewMaxBytes) {
+		this.documents = documents;
 		this.versions = versions;
 		this.validator = validator;
 		this.storage = storage;
@@ -57,26 +61,25 @@ public class VersionService {
 	 * 버전 일괄 업로드 — 동기 부분 < API 18 >
 	 *
 	 * 검증 → 볼륨 저장 → 행 생성 → 201. 하나라도 실패하면 전체를 거부하고 아무것도 남기지 않는다.
-	 *   version_no는 기존 최대값 + 1부터 보낸 파일 순서대로 붙인다.
-	 *   텍스트 계열은 이 트랜잭션 안에서 파일을 UTF-8로 읽어 content_text를 채우고 READY로 둔다 (AI 추출 호출 없음).
-	 *   문서 계열은 PROCESSING으로 두고 후처리에서 추출한다.
 	 * 후처리(VersionProcessor)는 트랜잭션이 커밋된 뒤에 시작한다. 커밋 전에 시작하면 다른 스레드가 아직 저장되지 않은 행을 못 본다.
 	 *
-	 * TODO AuditService(홍서연)가 들어오면 VERSION_UPLOAD / 검증 실패 시 VERSION_UPLOAD_FAILED 감사 로그를 남긴다.
+	 * 문서는 이 트랜잭션 안에서 다시 읽는다. 트랜잭션 밖에서 읽은 객체를 받으면
+	 * current_version_no·status 변경이 DB에 저장되지 않는다 (통합 테스트로 확인).
 	 *
-	 * @param document AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
-	 * @param files    요청의 files (배열 순서 = 버전 순서)
+	 * @param documentId AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
+	 * @param files      요청의 files (배열 순서 = 버전 순서)
 	 * @throws com.rookies6.DoQFlowAI.exception.UploadValidationException 검증 실패 (400, 20MB 초과는 413)
+	 * @throws DocumentNotFoundException 없는 문서 (404)
 	 */
 	@Transactional
-	public VersionUploadResponse uploadBatch(Document document, List<MultipartFile> files) {
-		Long documentId = document.getId();
+	public VersionUploadResponse uploadBatch(Long documentId, List<MultipartFile> files) {
+		Document document = documents.findById(documentId).orElseThrow(() -> new DocumentNotFoundException(documentId));
 		DocumentVersion previous = versions.findTopByDocumentIdOrderByVersionNoDesc(documentId).orElse(null);
 		List<ValidatedFile> validated = validator.validate(files, previous == null ? null : previous.getContentHash());
 
 		int versionNo = versions.findMaxVersionNo(documentId);
 		List<StoredFile> stored = new ArrayList<>();
-		deleteFilesOnRollback(documentId, stored);
+		TransactionHooks.onRollback(() -> deleteFiles(documentId, stored)); // 커밋 단계 실패 대비
 
 		List<DocumentVersion> created = new ArrayList<>();
 		try {
@@ -110,7 +113,7 @@ public class VersionService {
 
 		Long previousId = previous == null ? null : previous.getId();
 		List<Long> createdIds = created.stream().map(DocumentVersion::getId).toList();
-		afterCommit(() -> startProcessing(documentId, previousId, createdIds));
+		TransactionHooks.afterCommit(() -> startProcessing(documentId, previousId, createdIds));
 
 		return VersionUploadResponse.of(document, created);
 	}
@@ -153,6 +156,82 @@ public class VersionService {
 				.orElseThrow(VersionNotFoundException::new);
 	}
 
+	/**
+	 * 버전 삭제 < API 21 > (API 설계서 5.13)
+	 *
+	 * 행을 지우고 current_version_no를 남은 최대값으로 다시 맞춘다.
+	 *   중간 버전을 지우면 뒤 버전의 변경점을 비우고, 앞·뒤 버전 사이 구간을 후처리에서 다시 만든다.
+	 *   최신 버전을 지우면 직전 버전이 최신이 되므로 문서를 PROCESSING으로 두고 후처리에서 재색인한다.
+	 *   맨 앞 버전을 지우면 다음 버전이 v1 역할이 되어 변경점을 비운다 (v1의 변경점은 null).
+	 * message_source.version_id는 DB에서 SET NULL이 되어, 이 버전을 근거로 한 과거 답변은 대화 기록에서 가려진다.
+	 * 저장 파일은 커밋이 끝난 뒤에 지운다.
+	 *
+	 * @param documentId AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
+	 * @throws VersionNotFoundException   없는 버전 (404)
+	 * @throws DeleteNotAllowedException 버전이 하나뿐이거나 업로드 후처리 중 (400)
+	 */
+	@Transactional
+	public void deleteVersion(Long documentId, int versionNo) {
+		Document document = documents.findById(documentId).orElseThrow(() -> new DocumentNotFoundException(documentId));
+		if (document.getStatus() == DocumentStatus.PROCESSING) {
+			throw new DeleteNotAllowedException("document is processing: documentId=" + documentId);
+		}
+		List<DocumentVersion> all = versions.findByDocumentIdOrderByVersionNo(documentId);
+		int index = indexOf(all, versionNo);
+		if (index < 0) {
+			throw new VersionNotFoundException();
+		}
+		if (all.size() == 1) {
+			throw new DeleteNotAllowedException("only one version left: documentId=" + documentId);
+		}
+
+		DocumentVersion target = all.get(index);
+		DocumentVersion before = index > 0 ? all.get(index - 1) : null;
+		DocumentVersion after = index < all.size() - 1 ? all.get(index + 1) : null;
+		versions.delete(target);
+
+		boolean latestDeleted = after == null;
+		if (after != null) {
+			after.clearChange(); // 지운 버전 → after 구간은 더 이상 없다
+		}
+		if (latestDeleted) {
+			document.changeCurrentVersion(before.getVersionNo());
+			document.changeStatus(DocumentStatus.PROCESSING); // 재색인이 끝나면 READY
+		}
+
+		Long fromId = before != null && after != null ? before.getId() : null;
+		Long toId = before != null && after != null ? after.getId() : null;
+		Long reindexId = latestDeleted ? before.getId() : null;
+		int deletedNo = target.getVersionNo();
+		String deletedFile = target.getStoredFilename();
+		TransactionHooks.afterCommit(() -> {
+			deleteFiles(documentId, List.of(new StoredFile(deletedNo, deletedFile)));
+			if (fromId != null || reindexId != null) {
+				startRebuild(documentId, fromId, toId, reindexId);
+			}
+		});
+	}
+
+	private static int indexOf(List<DocumentVersion> all, int versionNo) {
+		for (int i = 0; i < all.size(); i++) {
+			if (all.get(i).getVersionNo() == versionNo) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private void startRebuild(Long documentId, Long fromId, Long toId, Long reindexId) {
+		try {
+			processor.rebuildAfterDelete(documentId, fromId, toId, reindexId);
+		} catch (TaskRejectedException e) {
+			log.warn("post-processing queue is full: documentId={}", documentId);
+			if (reindexId != null) {
+				processor.markFailed(documentId);
+			}
+		}
+	}
+
 	private void startProcessing(Long documentId, Long previousId, List<Long> createdIds) {
 		try {
 			processor.process(documentId, previousId, createdIds);
@@ -168,34 +247,6 @@ public class VersionService {
 			return new String(file.getBytes(), StandardCharsets.UTF_8); // 검증에서 올바른 UTF-8임을 확인했다
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
-		}
-	}
-
-	// 트랜잭션이 있으면 커밋 뒤에 실행하고, 없으면(단위 테스트) 바로 실행한다
-	private static void afterCommit(Runnable task) {
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCommit() {
-					task.run();
-				}
-			});
-		} else {
-			task.run();
-		}
-	}
-
-	// 커밋 단계에서 실패해 롤백되면 이미 저장한 파일도 지운다 (DB에 행이 없는 고아 파일 방지)
-	private void deleteFilesOnRollback(Long documentId, List<StoredFile> stored) {
-		if (TransactionSynchronizationManager.isSynchronizationActive()) {
-			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-				@Override
-				public void afterCompletion(int status) {
-					if (status == STATUS_ROLLED_BACK) {
-						deleteFiles(documentId, stored);
-					}
-				}
-			});
 		}
 	}
 

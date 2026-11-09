@@ -23,7 +23,7 @@ public record DocumentSummaryResponse(
 		Instant updatedAt,
 		UploadedBy uploadedBy)
 {
-	// 목록 항목의 등록자 정보 { "name": "홍서연", "rankLevel": 2 }
+	// 목록 항목의 등록자 정보 { "name": "팀장", "rankLevel": 2 }
 	public record UploadedBy(
 			String name,
 			int rankLevel

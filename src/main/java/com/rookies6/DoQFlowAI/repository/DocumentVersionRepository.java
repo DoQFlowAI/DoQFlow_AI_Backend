@@ -48,13 +48,20 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
 	Optional<DocumentVersion> findTopByDocumentIdOrderByVersionNoDesc(Long documentId);
 
 	/**
-	 * 질의응답 scope — 읽기 가능한 문서의 최신 버전 ID (Backend 개발 명세서 4.4, AccessPolicy 전용)
-	 * 내가 등록한 문서 + 초대를 수락한 문서(documentIds)의 마지막 버전만 모은다.
-	 * documentIds가 비어 있어도 내가 등록한 문서는 포함된다.
+	 * 질의응답 scope — 검색해도 되는 문서의 최신 버전 ID (Backend 개발 명세서 4.4, AccessPolicy 전용)
+	 *
+	 * 세 조건을 모두 만족하는 문서의 마지막 버전만 모은다.
+	 *   존재하는 문서  — 지워진 문서는 행이 없으므로 자연히 빠진다
+	 *   읽을 수 있음   — 내가 등록한 문서 + 초대를 수락한 문서(documentIds). documentIds가 비어도 내 문서는 포함된다
+	 *   검색 가능 상태 — document.status = READY (DB 설계서 4.1 "READY만 검색 대상")이고 마지막 버전도 READY.
+	 *                    업로드 후처리·재색인 중(PROCESSING)이거나 색인 실패(FAILED), 버전 없음(EMPTY)은 빠진다
+	 * 결과가 비면 질의응답은 AI Module(LLM)을 호출하지 않고 근거 없음으로 끝낸다 (Backend 개발 명세서 6).
 	 */
 	@Query("""
 			select v.id from DocumentVersion v
 			 where (v.document.id in :documentIds or v.document.uploadedBy.id = :userId)
+			   and v.document.status = com.rookies6.DoQFlowAI.entity.DocumentStatus.READY
+			   and v.status = com.rookies6.DoQFlowAI.entity.VersionStatus.READY
 			   and v.versionNo = (select max(v2.versionNo) from DocumentVersion v2
 			                       where v2.document = v.document)
 			""")
