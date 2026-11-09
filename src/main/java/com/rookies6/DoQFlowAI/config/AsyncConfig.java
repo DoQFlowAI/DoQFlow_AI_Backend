@@ -1,7 +1,10 @@
 package com.rookies6.DoQFlowAI.config;
 
+import java.util.Map;
+import org.slf4j.MDC;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -28,6 +31,28 @@ public class AsyncConfig {
 		executor.setThreadNamePrefix("upload-");
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(60);
+		executor.setTaskDecorator(copyMdc());
 		return executor;
+	}
+
+	/**
+	 * 업로드 요청의 MDC(traceId)를 후처리 스레드로 넘긴다.
+	 * 스레드가 바뀌면 MDC가 비므로, 이것이 없으면 후처리 로그와 AI Module 호출(X-Trace-Id)에 traceId가 빠진다.
+	 * 작업이 끝나면 지워서, 풀의 스레드를 다음 작업이 다시 쓸 때 이전 traceId가 남지 않게 한다.
+	 */
+	static TaskDecorator copyMdc() {
+		return task -> {
+			Map<String, String> context = MDC.getCopyOfContextMap();
+			return () -> {
+				if (context != null) {
+					MDC.setContextMap(context);
+				}
+				try {
+					task.run();
+				} finally {
+					MDC.clear();
+				}
+			};
+		};
 	}
 }
