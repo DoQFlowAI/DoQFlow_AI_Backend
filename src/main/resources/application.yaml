@@ -35,6 +35,7 @@ ai:
   internal-key: ${AI_INTERNAL_KEY}
   connect-timeout: 3s
   read-timeout: 60s
+  history-read-timeout: 180s   # /internal/history만 (구간마다 LLM 호출·재시도)
 
 app:
   upload-dir: ${UPLOAD_DIR:/app/uploads}
