@@ -6,7 +6,9 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -54,6 +56,28 @@ public class VersionFileStorage {
 		Path target = resolve(documentId, versionNo, storedFilename);
 		try {
 			Files.deleteIfExists(target);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	/** 문서의 저장 폴더 전체 삭제 < API 11 >
+	 *
+	 * {@code {upload-dir}/{documentId}} 아래의 모든 버전 파일과 폴더를 지운다. 폴더가 없으면 아무 일도 하지 않는다.
+	 */
+	public void deleteDocument(Long documentId) {
+		Path dir = baseDir.resolve(String.valueOf(documentId)).normalize();
+		if (!dir.startsWith(baseDir) || dir.equals(baseDir)) {
+			throw new IllegalArgumentException("upload path escapes the upload directory");
+		}
+		if (!Files.exists(dir)) {
+			return;
+		}
+		try (Stream<Path> paths = Files.walk(dir)) {
+			// 안쪽 파일부터 지워야 폴더를 지울 수 있다
+			for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+				Files.deleteIfExists(path);
+			}
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}

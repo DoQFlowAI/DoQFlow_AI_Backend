@@ -55,7 +55,7 @@ class VersionUploadTest {
 		processor = mock(VersionProcessor.class);
 		UploadFileValidator validator = new UploadFileValidator(10,
 				List.of("txt", "md", "csv", "json", "xml", "yaml", "yml", "log"), List.of("pdf", "docx"));
-		service = new VersionService(versions, validator, new VersionFileStorage(uploadDir.toString()), processor,
+		service = new VersionService(null, versions, validator, new VersionFileStorage(uploadDir.toString()), processor,
 				1_048_576);
 
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
