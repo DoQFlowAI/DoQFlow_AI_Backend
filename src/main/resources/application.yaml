@@ -23,6 +23,7 @@ spring:
   servlet.multipart:
     max-file-size: 20MB
     max-request-size: 220MB
+  task.execution.mode: force
 
 jwt:
   secret: ${JWT_SECRET}
@@ -40,11 +41,13 @@ app:
   login: { max-failures: 5, lock-minutes: 15 }
   upload:
     max-files: 10
-    allowed-mime: "application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    text-ext: "txt,md,csv,json,xml,yaml,yml,log"
+    doc-ext: "pdf,docx"                             # 추출 필요
+    view-max-bytes: 1048576                         # 원문 보기 응답 상한 1MB
   rate-limit: { chat-per-minute: 20, lookup-per-minute: 30 }
   chat: { max-question-length: 1000, top-k: 5 }
   cors.allowed-origins: ${CORS_ORIGINS}
-  signup.lead-key: ${SIGNUP_KEY_LEAD}   # Day 5 SEC-B 조치 시 사용
+  signup.lead-key: ${SIGNUP_KEY_LEAD}
 
 logging:
   level:
