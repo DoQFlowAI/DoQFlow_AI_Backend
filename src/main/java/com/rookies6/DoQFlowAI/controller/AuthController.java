@@ -1,8 +1,10 @@
 package com.rookies6.DoQFlowAI.controller;
 
+import com.rookies6.DoQFlowAI.dto.request.LoginRequest;
 import com.rookies6.DoQFlowAI.dto.request.SignupRequest;
 import com.rookies6.DoQFlowAI.dto.response.ApiResponse;
 import com.rookies6.DoQFlowAI.dto.response.SignupResponse;
+import com.rookies6.DoQFlowAI.dto.response.TokenResponse;
 import com.rookies6.DoQFlowAI.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -25,5 +27,10 @@ public class AuthController {
 	@ResponseStatus(HttpStatus.CREATED)
 	public ApiResponse<SignupResponse> signup(@Valid @RequestBody SignupRequest request) {
 		return ApiResponse.ok(authService.signup(request), "가입이 완료되었습니다.");
+	}
+
+  @PostMapping("/login")
+	public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
+		return ApiResponse.ok(authService.login(request));
 	}
 }
