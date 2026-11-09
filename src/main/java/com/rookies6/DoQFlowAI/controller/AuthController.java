@@ -2,6 +2,7 @@ package com.rookies6.DoQFlowAI.controller;
 
 import com.rookies6.DoQFlowAI.dto.request.LoginRequest;
 import com.rookies6.DoQFlowAI.dto.request.SignupRequest;
+import com.rookies6.DoQFlowAI.dto.request.TokenRequest;
 import com.rookies6.DoQFlowAI.dto.response.ApiResponse;
 import com.rookies6.DoQFlowAI.dto.response.SignupResponse;
 import com.rookies6.DoQFlowAI.dto.response.TokenResponse;
@@ -29,8 +30,13 @@ public class AuthController {
 		return ApiResponse.ok(authService.signup(request), "가입이 완료되었습니다.");
 	}
 
-  @PostMapping("/login")
-	public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
+    @PostMapping("/login")
+    public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
 		return ApiResponse.ok(authService.login(request));
+    }
+
+	@PostMapping("/refresh")
+	public ApiResponse<TokenResponse> refresh(@Valid @RequestBody TokenRequest request) {
+		return ApiResponse.ok(authService.refresh(request));
 	}
 }

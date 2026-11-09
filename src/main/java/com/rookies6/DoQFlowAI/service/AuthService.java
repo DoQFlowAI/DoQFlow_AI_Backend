@@ -2,11 +2,14 @@ package com.rookies6.DoQFlowAI.service;
 
 import com.rookies6.DoQFlowAI.dto.request.LoginRequest;
 import com.rookies6.DoQFlowAI.dto.request.SignupRequest;
+import com.rookies6.DoQFlowAI.dto.request.TokenRequest;
 import com.rookies6.DoQFlowAI.dto.response.SignupResponse;
 import com.rookies6.DoQFlowAI.dto.response.TokenResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
 import com.rookies6.DoQFlowAI.entity.RefreshToken;
+import com.rookies6.DoQFlowAI.exception.BusinessException;
 import com.rookies6.DoQFlowAI.exception.EmailDuplicatedException;
+import com.rookies6.DoQFlowAI.exception.ErrorCode;
 import com.rookies6.DoQFlowAI.exception.InvalidCredentialsException;
 import com.rookies6.DoQFlowAI.repository.AppUserRepository;
 import com.rookies6.DoQFlowAI.repository.RefreshTokenRepository;
@@ -26,8 +29,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.security.MessageDigest;
 
 import org.springframework.beans.factory.annotation.Value;
-
-
 
 /** 인증 < API 4.1~4.4 > */
 @Service
@@ -132,5 +133,32 @@ public class AuthService {
 		} catch (NoSuchAlgorithmException e) {
 			throw new IllegalStateException("SHA-256 not available", e);
 		}
+	}
+
+	/**
+	 * 토큰 재발급 < API 4.3 >
+	 *
+	 * <p><b>재사용 탐지.</b> 이미 폐기된 토큰이 다시 들어오면 탈취로 보고
+	 * 그 사용자의 Refresh Token을 전부 폐기한다. 공격자가 훔친 토큰을 쓰는 순간
+	 * 정상 사용자도 같이 로그아웃되어 탈취를 인지하게 된다.
+	 *
+	 * <p>없는 토큰·만료·폐기를 모두 401로 통일한다. 구분해 응답하면
+	 * 토큰이 존재하는지 확인하는 수단이 된다.
+	 */
+	@Transactional
+	public TokenResponse refresh(TokenRequest req) {
+		RefreshToken token = tokens.findByTokenHash(sha256(req.refreshToken()))
+				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "unknown refresh token"));
+
+		if (token.isRevoked()) {
+			tokens.revokeAllByUserId(token.getUser().getId());
+			throw new BusinessException(ErrorCode.UNAUTHORIZED, "refresh token reuse detected");
+		}
+		if (token.isExpired()) {
+			throw new BusinessException(ErrorCode.UNAUTHORIZED, "expired refresh token");
+		}
+
+		token.revoke();
+		return issueTokens(token.getUser());
 	}
 }
