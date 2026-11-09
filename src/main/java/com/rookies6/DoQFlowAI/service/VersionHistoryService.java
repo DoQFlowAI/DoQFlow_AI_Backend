@@ -1,0 +1,82 @@
+package com.rookies6.DoQFlowAI.service;
+
+import com.rookies6.DoQFlowAI.dto.response.CompareResponse;
+import com.rookies6.DoQFlowAI.dto.response.HistoryResponse;
+import com.rookies6.DoQFlowAI.entity.Document;
+import com.rookies6.DoQFlowAI.entity.DocumentVersion;
+import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
+import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
+import java.util.ArrayList;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class VersionHistoryService {
+
+	private final DocumentVersionRepository versions;
+	private final DiffService diffService;
+
+	public HistoryResponse history(Document document) {
+		List<DocumentVersion> all = versions.findByDocumentIdOrderByVersionNo(document.getId());
+
+		List<HistoryResponse.VersionItem> versionItems = all.stream()
+				.map(HistoryResponse.VersionItem::from)
+				.toList();
+
+		List<HistoryResponse.Segment> segments = new ArrayList<>();
+		for (int i = 1; i < all.size(); i++) {
+			DocumentVersion previous = all.get(i - 1);
+			DocumentVersion current = all.get(i);
+			if (current.getChangeCount() == null) {
+				continue;
+			}
+			segments.add(new HistoryResponse.Segment(
+					previous.getVersionNo(),
+					current.getVersionNo(),
+					current.getChangeType(),
+					current.getChangeSummary(),
+					current.getChangeCount(),
+					current.getSummaryStatus() == null ? null : current.getSummaryStatus().name()));
+		}
+		return new HistoryResponse(document.getId(), versionItems, segments);
+	}
+
+	public CompareResponse compare(Document document, int fromNo, int toNo) {
+		DocumentVersion from = findVersion(document, fromNo);
+		DocumentVersion to = findVersion(document, toNo);
+
+		List<DiffBlock> blocks = isAdjacentWithStoredDiff(document, fromNo, to)
+				? diffService.fromJson(to.getDiffJson())
+				: diffService.diff(from.getContentText(), to.getContentText());
+
+		return new CompareResponse(
+				fromNo,
+				toNo,
+				textOf(from),
+				textOf(to),
+				blocks.size(),
+				blocks);
+	}
+
+	private DocumentVersion findVersion(Document document, int versionNo) {
+		return versions.findByDocumentIdAndVersionNo(document.getId(), versionNo)
+				.orElseThrow(VersionNotFoundException::new);
+	}
+
+	// from이 to의 실제 직전 버전이고, to에 저장된 diff가 있으면 재사용할 수 있다.
+	private boolean isAdjacentWithStoredDiff(Document document, int fromNo, DocumentVersion to) {
+		if (fromNo >= to.getVersionNo() || to.getDiffJson() == null) {
+			return false;
+		}
+		Integer previousNo = versions.findPreviousVersionNo(document.getId(), to.getVersionNo());
+		return previousNo != null && previousNo == fromNo;
+	}
+
+	private static String textOf(DocumentVersion version) {
+		return version.getContentText() == null ? "" : version.getContentText();
+	}
+}
