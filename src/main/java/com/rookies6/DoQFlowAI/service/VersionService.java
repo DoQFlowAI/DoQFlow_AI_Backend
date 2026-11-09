@@ -1,6 +1,7 @@
 package com.rookies6.DoQFlowAI.service;
 
 import com.rookies6.DoQFlowAI.dto.response.VersionContentResponse;
+import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
@@ -112,6 +113,30 @@ public class VersionService {
 		afterCommit(() -> startProcessing(documentId, previousId, createdIds));
 
 		return VersionUploadResponse.of(document, created);
+	}
+
+	/**
+	 * 버전 목록 < API 19 >
+	 * 버전 번호 오름차순. 버전이 없으면 빈 목록이다.
+	 *
+	 * @param document AccessPolicy.readOrNotFound()를 통과한 문서
+	 */
+	public List<VersionResponse> list(Document document) {
+		return versions.findByDocumentIdOrderByVersionNo(document.getId()).stream()
+				.map(VersionResponse::from)
+				.toList();
+	}
+
+	/**
+	 * 버전 단건 < API 20 >
+	 *
+	 * @param document AccessPolicy.readOrNotFound()를 통과한 문서
+	 * @throws VersionNotFoundException 없는 버전 (404 DOCUMENT_NOT_FOUND, 못 읽는 문서와 같은 응답)
+	 */
+	public VersionResponse get(Document document, int versionNo) {
+		return versions.findByDocumentIdAndVersionNo(document.getId(), versionNo)
+				.map(VersionResponse::from)
+				.orElseThrow(VersionNotFoundException::new);
 	}
 
 	/**
