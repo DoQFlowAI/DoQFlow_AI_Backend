@@ -29,7 +29,7 @@ public record DocumentDetailResponse(
 )
 
 {
-	// 단건 응답의 등록자 정보 { "name": "홍서연", "email": "hong@example.com", "rankLevel": 2 }
+	// 단건 응답의 등록자 정보 { "name": "팀장", "email": "lead@example.com", "rankLevel": 2 }
 	public record UploadedBy(
 			String name,
 			String email,
