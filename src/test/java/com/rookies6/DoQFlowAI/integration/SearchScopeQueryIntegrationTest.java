@@ -24,7 +24,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 질의응답 scope 쿼리 통합 테스트 (Backend 개발 명세서 4.4 findLatestIdsByDocumentIds)
+ * 질의응답 scope 쿼리 통합 테스트
  *
  * LLM에 보내기 전 검색 범위가 "존재하고, 읽을 수 있고, READY인 문서의 최신 버전"만인지 실제 MariaDB로 확인한다.
  * 범위가 비면 질의응답은 AI Module을 호출하지 않는다.
