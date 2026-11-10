@@ -2,6 +2,7 @@ package com.rookies6.DoQFlowAI.controller;
 
 import com.rookies6.DoQFlowAI.dto.response.ApiResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionContentResponse;
+import com.rookies6.DoQFlowAI.dto.response.VersionDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
@@ -50,9 +51,9 @@ public class VersionController {
 		return ApiResponse.ok(versionService.list(me, documentId));
 	}
 
-	/** 버전 단건 < API 20 > */
+	/** 버전 단건 < API 20 > — 버전 본문 패널용 본문(contentText) 포함 */
 	@GetMapping("/{versionNo}")
-	public ApiResponse<VersionResponse> get(@CurrentUser AppUser me, @PathVariable Long documentId,
+	public ApiResponse<VersionDetailResponse> get(@CurrentUser AppUser me, @PathVariable Long documentId,
 			@PathVariable int versionNo) {
 		return ApiResponse.ok(versionService.get(me, documentId, versionNo));
 	}

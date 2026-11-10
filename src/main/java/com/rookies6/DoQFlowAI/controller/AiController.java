@@ -25,7 +25,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
  *
  * 이벤트 순서
  *   답변     data: {"sources": [...]} → data: {"token": "..."} 여러 번 → data: [DONE]
- *   근거 없음 data: {"noAnswer": true, "message": "..."} → data: [DONE]
+ *   근거 없음 data: {"token": "문서에서 답을 찾지 못했습니다.", "noAnswer": true} → data: [DONE]
+ *
+ * 근거 없음 문구를 token 이벤트로 보내는 이유: 화면은 token·sources·[DONE]만 처리하고 근거 없음은 서버 문구를 그대로
+ * 표시한다 (Frontend 개발 명세서 4장·SSE 처리). noAnswer는 화면이 구분하고 싶을 때 쓰도록 같이 넣는다.
  */
 @RestController
 @RequestMapping("/ai")
@@ -55,7 +58,10 @@ public class AiController {
 
 	static List<Object> events(ChatAnswer answer) {
 		if (answer.noAnswer()) {
-			return List.of(Map.of("noAnswer", true, "message", ChatService.NO_ANSWER_MESSAGE), DONE);
+			Map<String, Object> noAnswer = new java.util.LinkedHashMap<>();
+			noAnswer.put("token", ChatService.NO_ANSWER_MESSAGE);
+			noAnswer.put("noAnswer", true);
+			return List.of(noAnswer, DONE);
 		}
 		List<Object> events = new java.util.ArrayList<>();
 		events.add(Map.of("sources", answer.sources()));
