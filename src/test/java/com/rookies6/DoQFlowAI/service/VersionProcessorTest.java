@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -34,6 +35,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -143,8 +145,9 @@ class VersionProcessorTest {
 				List.of(new AiHistory.Block("CHANGE", List.of("b"), List.of("B")))));
 		assertThat(sent.getAllValues().get(1).get(0)).isEqualTo(new AiHistory.RequestSegment(2, 3,
 				List.of(new AiHistory.Block("INSERT", List.of(), List.of("d")))));
-		// 텍스트 계열은 추출을 다시 부르지 않는다
-		verify(ai, never()).extract(anyLong(), anyString(), anyString());
+		// 텍스트 계열은 본문을 다시 추출하지 않고, 마지막 버전만 색인용 임시 파일을 만들러 한 번 부른다
+		verify(ai, times(1)).extract(anyLong(), anyString(), anyString());
+		verify(ai).extract(13L, "7/3/uuid-3", "text/plain");
 	}
 
 	@Test
@@ -263,6 +266,72 @@ class VersionProcessorTest {
 
 		verify(ai, times(2)).extract(eq(11L), anyString(), anyString());
 		verify(ai, times(2)).index(DOCUMENT_ID, 11L, 1);
+		assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
+	}
+
+	@Test
+	@DisplayName("텍스트 계열 마지막 버전은 색인 전에 extract로 임시 파일을 만들고 DB 본문은 그대로 둔다")
+	void textLatestExtractsBeforeIndexAndKeepsStoredText() {
+		DocumentVersion v1 = version(11, 1, "text/markdown");
+		v1.completeExtraction("# 결재\n팀장이 승인한다.");
+		uploaded(v1);
+		extractReturns(11, "결재 팀장이 승인한다."); // AI Module이 정리한 본문. 저장하지 않는다
+
+		processor.run(DOCUMENT_ID, null, List.of(11L));
+
+		InOrder order = inOrder(ai);
+		order.verify(ai).extract(11L, "7/1/uuid-1", "text/markdown");
+		order.verify(ai).index(DOCUMENT_ID, 11L, 1);
+		assertThat(v1.getContentText()).isEqualTo("# 결재\n팀장이 승인한다.");
+		assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
+	}
+
+	@Test
+	@DisplayName("텍스트 계열 extract가 실패하면 색인하지 않고 문서 FAILED")
+	void textExtractFailureSkipsIndexAndMarksFailed() {
+		DocumentVersion v1 = version(11, 1, "text/plain");
+		v1.completeExtraction("본문");
+		uploaded(v1);
+		when(ai.extract(eq(11L), anyString(), anyString())).thenThrow(new AiModuleException("invalid utf-8"));
+
+		processor.run(DOCUMENT_ID, null, List.of(11L));
+
+		verify(ai, never()).index(anyLong(), anyLong(), anyInt());
+		assertThat(v1.getStatus()).isEqualTo(VersionStatus.READY); // 버전 본문은 그대로 볼 수 있다
+		assertThat(document.getStatus()).isEqualTo(DocumentStatus.FAILED);
+	}
+
+	@Test
+	@DisplayName("색인 실패 시 텍스트 계열도 추출을 한 번 다시 하고 색인한다")
+	void indexFailureReExtractsOnceForTextKind() {
+		DocumentVersion v1 = version(11, 1, "text/csv");
+		v1.completeExtraction("a,b\n1,2");
+		uploaded(v1);
+		extractReturns(11, "a,b\n1,2");
+		when(ai.index(DOCUMENT_ID, 11L, 1))
+				.thenThrow(new AiModuleException("no extract cache"))
+				.thenReturn(new AiIndex.Response("READY", 1));
+
+		processor.run(DOCUMENT_ID, null, List.of(11L));
+
+		verify(ai, times(2)).extract(eq(11L), anyString(), anyString());
+		verify(ai, times(2)).index(DOCUMENT_ID, 11L, 1);
+		assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
+	}
+
+	@Test
+	@DisplayName("최신 버전 삭제 뒤 텍스트 계열 직전 버전을 재색인할 때도 extract를 먼저 부른다")
+	void reindexAfterDeleteExtractsTextKindFirst() {
+		DocumentVersion v1 = version(11, 1, "text/plain");
+		v1.completeExtraction("본문");
+		when(versions.findById(11L)).thenReturn(Optional.of(v1));
+		extractReturns(11, "본문");
+
+		processor.rebuildAfterDelete(DOCUMENT_ID, null, null, 11L);
+
+		InOrder order = inOrder(ai);
+		order.verify(ai).extract(11L, "7/1/uuid-1", "text/plain");
+		order.verify(ai).index(DOCUMENT_ID, 11L, 1);
 		assertThat(document.getStatus()).isEqualTo(DocumentStatus.READY);
 	}
 
