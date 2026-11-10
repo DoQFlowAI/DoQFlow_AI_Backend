@@ -79,6 +79,9 @@ class VersionPipelineIntegrationTest {
 		registry.add("spring.datasource.username", () -> System.getenv("DOQ_IT_DB_USER"));
 		registry.add("spring.datasource.password", () -> System.getenv("DOQ_IT_DB_PASSWORD"));
 		registry.add("app.upload-dir", UPLOAD_DIR::toString);
+		// 테스트 전용 값. 실제 비밀값을 쓰지 않는다 (.env가 없는 CI에서도 뜨게)
+		registry.add("jwt.secret", () -> "integration-test-secret-integration-test-secret");
+		registry.add("ai.internal-key", () -> "integration-test-key");
 	}
 
 	@MockitoBean
