@@ -1,6 +1,7 @@
 package com.rookies6.DoQFlowAI.service;
 
 import com.rookies6.DoQFlowAI.dto.response.VersionContentResponse;
+import com.rookies6.DoQFlowAI.dto.response.VersionDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
@@ -74,8 +75,8 @@ public class VersionService {
 		return list(accessPolicy.readOrNotFound(me.getId(), documentId));
 	}
 
-	/** 버전 단건 < API 20 > - 읽기 권한 */
-	public VersionResponse get(AppUser me, Long documentId, int versionNo) {
+	/** 버전 단건 < API 20 > - 읽기 권한. 본문(contentText) 포함 */
+	public VersionDetailResponse get(AppUser me, Long documentId, int versionNo) {
 		return get(accessPolicy.readOrNotFound(me.getId(), documentId), versionNo);
 	}
 
@@ -166,13 +167,14 @@ public class VersionService {
 
 	/**
 	 * 버전 단건 < API 20 >
+	 * 버전 본문 패널용으로 본문을 함께 내린다. 본문 규칙은 원문 보기(API 23)와 같다 (READY가 아니면 null, 1MB 상한).
 	 *
 	 * @param document AccessPolicy.readOrNotFound()를 통과한 문서
 	 * @throws VersionNotFoundException 없는 버전 (404 DOCUMENT_NOT_FOUND, 못 읽는 문서와 같은 응답)
 	 */
-	public VersionResponse get(Document document, int versionNo) {
+	public VersionDetailResponse get(Document document, int versionNo) {
 		return versions.findByDocumentIdAndVersionNo(document.getId(), versionNo)
-				.map(VersionResponse::from)
+				.map(version -> VersionDetailResponse.of(version, viewMaxBytes))
 				.orElseThrow(VersionNotFoundException::new);
 	}
 

@@ -1,5 +1,8 @@
 server:
   port: 8080
+  # 모든 API가 /api 아래에 있다. 화면은 /api로만 요청한다 (Frontend 개발 명세서 3장).
+  # 컨트롤러 경로에는 /api를 쓰지 않는다 (API 설계서의 경로 표기와 같음: /documents = /api/documents)
+  servlet.context-path: /api
   error:
     include-stacktrace: never
     include-message: never

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.rookies6.DoQFlowAI.dto.response.VersionDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
 import com.rookies6.DoQFlowAI.entity.Document;
@@ -85,15 +86,57 @@ class VersionReadTest {
 	}
 
 	@Test
-	@DisplayName("단건은 해당 버전을 내린다")
-	void getsSingleVersion() {
+	@DisplayName("단건은 해당 버전을 본문과 함께 내린다")
+	void getsSingleVersionWithContent() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 2)).thenReturn(Optional.of(version(2)));
 
-		VersionResponse response = service.get(document, 2);
+		VersionDetailResponse response = service.get(document, 2);
 
 		assertThat(response.versionNo()).isEqualTo(2);
 		assertThat(response.status()).isEqualTo(VersionStatus.READY);
 		assertThat(response.fileSize()).isEqualTo(184320);
+		assertThat(response.contentText()).isEqualTo("본문");
+		assertThat(response.contentTruncated()).isFalse();
+	}
+
+	@Test
+	@DisplayName("단건 본문은 READY가 아니면 null이다")
+	void detailContentIsNullUnlessReady() {
+		DocumentVersion processing = DocumentVersion.builder().document(document).versionNo(3)
+				.originalFilename("v3.pdf").storedFilename("s3.pdf").mimeType("application/pdf")
+				.fileSize(1).contentHash("h3").build();
+		DocumentVersion failed = version(4);
+		failed.failExtraction();
+		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 3)).thenReturn(Optional.of(processing));
+		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 4)).thenReturn(Optional.of(failed));
+
+		assertThat(service.get(document, 3).contentText()).isNull();
+		assertThat(service.get(document, 4).contentText()).isNull();
+	}
+
+	@Test
+	@DisplayName("단건 본문은 상한을 넘으면 잘리고 잘렸다고 표시한다")
+	void detailContentIsTruncatedOverLimit() {
+		VersionService small = new VersionService(null, versions, null, null, null, null, 6);
+		DocumentVersion longText = version(5);
+		longText.completeExtraction("가나다라");
+		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 5)).thenReturn(Optional.of(longText));
+
+		VersionDetailResponse response = small.get(document, 5);
+
+		assertThat(response.contentText()).isEqualTo("가나");
+		assertThat(response.contentTruncated()).isTrue();
+	}
+
+	@Test
+	@DisplayName("단건 JSON은 목록 필드에 contentText와 contentTruncated를 더하고 저장 파일명이 없다")
+	void detailJsonAddsContentWithoutStoredFilename() {
+		String json = JsonMapper.builder().build().writeValueAsString(VersionDetailResponse.of(version(1), 1_048_576));
+
+		assertThat(json).isEqualTo("{\"versionNo\":1,\"originalFilename\":\"v1.pdf\",\"fileSize\":184320,"
+				+ "\"status\":\"READY\",\"changeType\":null,\"changeSummary\":null,"
+				+ "\"createdAt\":\"2026-11-06T09:30:00Z\",\"contentText\":\"본문\",\"contentTruncated\":false}");
+		assertThat(json).doesNotContain("storedFilename", "5f1c-uuid", "contentHash");
 	}
 
 	@Test
