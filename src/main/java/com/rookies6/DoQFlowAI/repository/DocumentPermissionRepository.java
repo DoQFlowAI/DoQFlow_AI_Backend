@@ -41,6 +41,23 @@ public interface DocumentPermissionRepository extends JpaRepository<DocumentPerm
 
 	/** [API P-5~7] 내 초대함 */
 	List<DocumentPermission> findByUserIdAndStatus(Long userId, PermissionStatus status);
+	
+	/**
+	 * [API P-5] 내 초대함. 문서명·초대자명을 함께 내리므로 fetch join 한다.
+	 *
+	 * <p>document와 grantedBy 모두 LAZY라, 없으면 목록 길이만큼 쿼리가 더 나간다.
+	 */
+	@Query("""
+			select p from DocumentPermission p
+			  join fetch p.document
+			  join fetch p.grantedBy
+			 where p.user.id = :userId
+			   and p.status = :status
+			 order by p.grantedAt desc
+			""")
+	List<DocumentPermission> findByUserIdAndStatusWithDocument(
+			@Param("userId") Long userId,
+			@Param("status") PermissionStatus status);
 
 	/**
 	 * [AccessPolicy] 읽을 수 있는 문서 id 전체 — 내가 등록한 것 + 수락한 초대
