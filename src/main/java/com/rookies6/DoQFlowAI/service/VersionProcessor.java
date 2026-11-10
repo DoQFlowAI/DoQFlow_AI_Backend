@@ -28,7 +28,8 @@ import org.springframework.stereotype.Component;
  *   1. 추출   — 문서 계열(pdf, docx)만 /internal/extract. 텍스트 계열은 업로드 때 본문을 이미 채웠다
  *   2. diff   — 인접 구간(직전 버전 → 새 첫 버전, 새 버전끼리)마다 DiffService로 계산해 diff_json·change_count 저장
  *   3. 요약   — 변경 블록이 없으면 SKIPPED(LLM 미호출), 있으면 구간 하나씩 /internal/history
- *   4. 색인   — 마지막 버전만 /internal/index, 성공하면 DELETE /internal/index(keep=마지막)로 이전 벡터 정리
+ *   4. 색인   — 마지막 버전만 /internal/index, 성공하면 DELETE /internal/index(keep=마지막)로 이전 벡터 정리.
+ *               텍스트 계열은 색인 직전에 /internal/extract로 AI Module의 색인용 임시 파일만 만든다
  *   5. 문서 상태 READY (색인 실패·마지막 버전 추출 실패면 FAILED)
  *
  * 실패 처리
@@ -194,11 +195,12 @@ public class VersionProcessor {
 
 	/**
 	 * 마지막 버전만 색인하고, 성공하면 같은 문서의 이전 벡터를 지운다.
-	 * AI Module 재시작 등으로 추출 단계의 임시 파일이 없어 색인이 실패하면,
-	 * 문서 계열은 추출부터 한 번 다시 한다 (AI 모듈 연동 명세서 4.2).
+	 * /internal/index는 추출 단계의 임시 파일로 색인한다 (AI 모듈 연동 명세서 4.2).
 	 *
-	 * TODO 텍스트 계열은 추출을 거치지 않아 AI Module에 색인용 임시 파일이 없다.
-	 *      /internal/index 요청에 filePath·mimeType을 넣는 방안을 AI 모듈 담당과 협의 중이다.
+	 * 텍스트 계열은 업로드 때 Backend가 본문을 직접 채워 추출을 거치지 않으므로, 색인 직전에 /internal/extract를
+	 * 한 번 불러 임시 파일을 만든다. 응답의 contentText는 쓰지 않고, DB 본문은 업로드 때 채운 그대로 둔다.
+	 * AI Module 재시작 등으로 임시 파일이 없어 색인이 실패하면, 형식과 관계없이 추출을 한 번 다시 하고 재시도한다.
+	 * 버전 삭제 뒤 재색인(rebuildAfterDelete)도 이 메서드를 쓴다.
 	 *
 	 * @return 색인 성공 여부
 	 */
@@ -206,9 +208,11 @@ public class VersionProcessor {
 		if (last.getStatus() != VersionStatus.READY) {
 			return false;
 		}
+		if (FileKind.fromMimeType(last.getMimeType()) == FileKind.TEXT && !reExtract(documentId, last)) {
+			return false;
+		}
 		if (!tryIndex(documentId, last)) {
-			boolean canReExtract = FileKind.fromMimeType(last.getMimeType()) == FileKind.DOC;
-			if (!canReExtract || !reExtract(documentId, last) || !tryIndex(documentId, last)) {
+			if (!reExtract(documentId, last) || !tryIndex(documentId, last)) {
 				return false;
 			}
 		}
