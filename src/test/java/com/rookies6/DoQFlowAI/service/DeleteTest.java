@@ -243,7 +243,7 @@ class DeleteTest {
 
 		@BeforeEach
 		void setUp() {
-			service = new DocumentService(documents, versions, storage, ai, null);
+			service = new DocumentService(documents, versions, storage, ai, null, null, null);
 		}
 
 		@Test

@@ -1,8 +1,10 @@
 package com.rookies6.DoQFlowAI.controller;
 
+import com.rookies6.DoQFlowAI.dto.request.DocumentCreateRequest;
 import com.rookies6.DoQFlowAI.dto.request.DocumentListRequest;
 import com.rookies6.DoQFlowAI.dto.request.DocumentUpdateRequest;
 import com.rookies6.DoQFlowAI.dto.response.ApiResponse;
+import com.rookies6.DoQFlowAI.dto.response.DocumentCreateResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentSummaryResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentUpdateResponse;
@@ -18,13 +20,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 문서 API < API 8, API 9, API 10, API 11 > (API 설계서 5.3~5.6)
+ * 문서 API < API 7, API 8, API 9, API 10, API 11 >
  *
  * 권한 판정은 DocumentService가 AccessPolicy로 한다. 컨트롤러는 사용자 ID를 요청에서 받지 않고 토큰의 사용자만 쓴다.
  */
@@ -34,6 +37,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class DocumentController {
 
 	private final DocumentService documentService;
+
+	/**
+	 * 문서 생성 + 초대 < API 7 > — 팀장만 (사원은 403). 201
+	 * 미가입 이메일은 오류가 아니라 응답의 notFound로 알려 준다.
+	 */
+	@PostMapping
+	@ResponseStatus(HttpStatus.CREATED)
+	public ApiResponse<DocumentCreateResponse> create(@CurrentUser AppUser me,
+			@Valid @RequestBody DocumentCreateRequest request) {
+		return ApiResponse.ok(documentService.create(me, request));
+	}
 
 	/** 문서 목록 < API 8 > — 내가 등록했거나 초대를 수락한 문서만 */
 	@GetMapping
