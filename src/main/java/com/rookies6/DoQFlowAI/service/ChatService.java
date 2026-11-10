@@ -5,6 +5,8 @@ import com.rookies6.DoQFlowAI.dto.response.ChatMessageResponse;
 import com.rookies6.DoQFlowAI.dto.response.ChatSessionResponse;
 import com.rookies6.DoQFlowAI.dto.response.ChatSourceResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
 import com.rookies6.DoQFlowAI.entity.ChatMessage;
 import com.rookies6.DoQFlowAI.entity.ChatSession;
 import com.rookies6.DoQFlowAI.entity.Document;
@@ -45,6 +47,11 @@ import org.springframework.transaction.annotation.Transactional;
  * 근거 없음 문구는 권한 없음·문서 없음·검색 실패·재확인 실패 모두 같다. 응답만으로 문서의 존재를 알 수 없어야 한다.
  *
  * scope는 AccessPolicy.accessibleVersionIds(me)로 구한다 (존재하고, 읽을 수 있고, READY인 문서의 최신 버전).
+ *
+ * 감사 로그 (DB 설계서 3.3) — 질문 원문·답변·조각 내용은 남기지 않는다
+ *   CHAT_QUESTION       답변을 돌려줄 때마다(근거 없음 포함). 범위 크기와 근거 문서 ID
+ *   SOURCE_CHECK_FAILED 근거 재확인 실패로 답변을 버렸을 때. 범위 밖 버전 ID
+ * AI Module 실패(502)는 질문이 처리되지 않았으므로 CHAT_QUESTION을 남기지 않는다.
  */
 @Slf4j
 @Service
@@ -60,12 +67,13 @@ public class ChatService {
 	private final AiClientService aiClient;
 	private final AccessPolicy accessPolicy;
 	private final DocumentPermissionRepository permissions;
+	private final AuditService audit;
 	private final int maxQuestionLength;
 	private final int topK;
 
 	public ChatService(ChatSessionRepository sessions, ChatMessageRepository messages,
 			MessageSourceRepository sources, ChatHistoryWriter writer, AiClientService aiClient,
-			AccessPolicy accessPolicy, DocumentPermissionRepository permissions,
+			AccessPolicy accessPolicy, DocumentPermissionRepository permissions, AuditService audit,
 			@Value("${app.chat.max-question-length:1000}") int maxQuestionLength,
 			@Value("${app.chat.top-k:5}") int topK) {
 		this.sessions = sessions;
@@ -75,6 +83,7 @@ public class ChatService {
 		this.aiClient = aiClient;
 		this.accessPolicy = accessPolicy;
 		this.permissions = permissions;
+		this.audit = audit;
 		this.maxQuestionLength = maxQuestionLength;
 		this.topK = topK;
 	}
@@ -172,6 +181,17 @@ public class ChatService {
 		ownSession(me, sessionId);
 
 		Set<Long> allowed = scope == null ? Set.of() : new TreeSet<>(scope);
+		ChatAnswer answer = answer(me, sessionId, checked, allowed);
+
+		// 질문 원문은 남기지 않는다. 범위 크기와 답변 근거의 문서 ID만 (DB 설계서 3.3)
+		List<Long> sourceDocumentIds = answer.sources().stream()
+				.map(ChatSourceResponse::documentId).distinct().sorted().toList();
+		audit.log(AuditEventType.CHAT_QUESTION, AuditResult.SUCCESS, me.getId(), "CHAT_SESSION", sessionId,
+				"scopeSize=" + allowed.size() + " sourceDocumentIds=" + sourceDocumentIds);
+		return answer;
+	}
+
+	private ChatAnswer answer(AppUser me, Long sessionId, String checked, Set<Long> allowed) {
 		if (allowed.isEmpty()) {
 			// 검색할 문서가 없으면 LLM을 부르지 않는다 (Backend 개발 명세서 6)
 			log.info("chat scope is empty; AI Module not called sessionId={}", sessionId);
@@ -183,14 +203,26 @@ public class ChatService {
 			return writer.saveNoAnswer(sessionId, checked, NO_ANSWER_MESSAGE);
 		}
 		if (!withinScope(result, allowed)) {
-			// TODO AuditService 병합 후 SOURCE_CHECK_FAILED 기록. 답변·조각 내용은 남기지 않는다
-			log.warn("SOURCE_CHECK_FAILED sessionId={} scopeSize={} sourceVersionIds={}",
-					sessionId, allowed.size(), result.sourceVersionIds());
+			// 답변·조각 내용은 남기지 않는다. 범위 밖 버전 ID만
+			List<Long> outOfScope = outOfScopeVersionIds(result, allowed);
+			log.warn("SOURCE_CHECK_FAILED sessionId={} scopeSize={} outOfScopeVersionIds={}",
+					sessionId, allowed.size(), outOfScope);
+			audit.log(AuditEventType.SOURCE_CHECK_FAILED, AuditResult.FAILURE, me.getId(), "CHAT_SESSION", sessionId,
+					"scopeSize=" + allowed.size() + " outOfScopeVersionIds=" + outOfScope);
 			return writer.saveNoAnswer(sessionId, checked, NO_ANSWER_MESSAGE);
 		}
 		return writer.saveAnswer(sessionId, checked, result)
 				// 근거 버전이 그사이 삭제됨. 출처를 보여줄 수 없는 답변은 내보내지 않는다
 				.orElseGet(() -> writer.saveNoAnswer(sessionId, checked, NO_ANSWER_MESSAGE));
+	}
+
+	/** 근거 재확인 실패의 원인. sourceVersionIds·조각 버전 중 범위 밖(또는 null) ID. 근거가 아예 없으면 빈 목록 */
+	static List<Long> outOfScopeVersionIds(AiChat.Result result, Set<Long> allowed) {
+		Set<Long> out = new TreeSet<>(java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()));
+		result.sourceVersionIds().stream().filter(id -> id == null || !allowed.contains(id)).forEach(out::add);
+		result.chunks().stream().map(AiChat.Chunk::versionId)
+				.filter(id -> id == null || !allowed.contains(id)).forEach(out::add);
+		return new ArrayList<>(out);
 	}
 
 	/**

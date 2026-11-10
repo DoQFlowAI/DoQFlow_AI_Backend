@@ -5,11 +5,15 @@ import com.rookies6.DoQFlowAI.dto.response.VersionDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import com.rookies6.DoQFlowAI.exception.DeleteNotAllowedException;
 import com.rookies6.DoQFlowAI.exception.DocumentNotFoundException;
+import com.rookies6.DoQFlowAI.exception.ForbiddenException;
+import com.rookies6.DoQFlowAI.exception.UploadValidationException;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
 import com.rookies6.DoQFlowAI.repository.DocumentRepository;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
@@ -32,6 +36,11 @@ import org.springframework.web.multipart.MultipartFile;
  * 컨트롤러는 AppUser를 받는 메서드만 부른다. 이 메서드들이 트랜잭션 안에서 AccessPolicy를 먼저 호출한다
  * 읽기는 readOrNotFound(404), 쓰기는 writeOrThrow(404, 등록자가 아니면 403).
  * Document나 documentId만 받는 메서드는 권한 판정을 통과한 뒤의 처리다 (단위·통합 테스트도 이것을 쓴다).
+ *
+ * 감사 로그 (DB 설계서 3.3)
+ *   VERSION_UPLOAD        업로드 성공. 파일 수와 새 버전 번호
+ *   VERSION_UPLOAD_FAILED 업로드 거부. 파일 수와 실패 단계(reason)만. 원본 파일명은 남기지 않는다
+ *   VERSION_DELETE        버전 삭제. 문서 ID와 버전 번호
  */
 @Slf4j
 @Service
@@ -44,6 +53,7 @@ public class VersionService {
 	private final VersionFileStorage storage;
 	private final VersionProcessor processor;
 	private final AccessPolicy accessPolicy;
+	private final AuditService audit;
 	private final int viewMaxBytes;
 
 	public VersionService(
@@ -53,6 +63,7 @@ public class VersionService {
 			VersionFileStorage storage,
 			VersionProcessor processor,
 			AccessPolicy accessPolicy,
+			AuditService audit,
 			@Value("${app.upload.view-max-bytes:1048576}") int viewMaxBytes) {
 		this.documents = documents;
 		this.versions = versions;
@@ -60,14 +71,41 @@ public class VersionService {
 		this.storage = storage;
 		this.processor = processor;
 		this.accessPolicy = accessPolicy;
+		this.audit = audit;
 		this.viewMaxBytes = viewMaxBytes;
 	}
 
-	/** 버전 일괄 업로드 < API 18 > - 등록자 본인만. 등록자가 아니면 403, 읽을 수 없으면 404 */
+	/**
+	 * 버전 일괄 업로드 < API 18 > - 등록자 본인만. 등록자가 아니면 403, 읽을 수 없으면 404
+	 * 거부된 업로드는 실패 단계를 감사 로그로 남기고 같은 예외를 그대로 던진다 (응답은 그대로).
+	 * 감사 로그는 별도 트랜잭션이라 업로드 롤백과 관계없이 남는다.
+	 */
 	@Transactional
 	public VersionUploadResponse uploadBatch(AppUser me, Long documentId, List<MultipartFile> files) {
-		accessPolicy.writeOrThrow(me.getId(), documentId);
-		return uploadBatch(documentId, files);
+		int fileCount = files == null ? 0 : files.size();
+		try {
+			accessPolicy.writeOrThrow(me.getId(), documentId);
+			VersionUploadResponse response = uploadBatch(documentId, files);
+			audit.log(AuditEventType.VERSION_UPLOAD, AuditResult.SUCCESS, me.getId(), "DOCUMENT", documentId,
+					"fileCount=" + fileCount + " versionNos="
+							+ response.versions().stream().map(v -> String.valueOf(v.versionNo())).toList());
+			return response;
+		} catch (DocumentNotFoundException e) {
+			// 문서가 있는지 드러내지 않도록 대상을 비운다
+			uploadFailed(me, null, fileCount, "NOT_FOUND");
+			throw e;
+		} catch (ForbiddenException e) {
+			uploadFailed(me, documentId, fileCount, "NOT_OWNER");
+			throw e;
+		} catch (UploadValidationException e) {
+			uploadFailed(me, documentId, fileCount, e.getReason().name());
+			throw e;
+		}
+	}
+
+	private void uploadFailed(AppUser me, Long documentId, int fileCount, String reason) {
+		audit.log(AuditEventType.VERSION_UPLOAD_FAILED, AuditResult.FAILURE, me.getId(),
+				documentId == null ? null : "DOCUMENT", documentId, "fileCount=" + fileCount + " reason=" + reason);
 	}
 
 	/** 버전 목록 < API 19 > - 읽기 권한. 없는 문서·권한 밖은 404 */
@@ -89,7 +127,9 @@ public class VersionService {
 	@Transactional
 	public void deleteVersion(AppUser me, Long documentId, int versionNo) {
 		accessPolicy.writeOrThrow(me.getId(), documentId);
-		deleteVersion(documentId, versionNo);
+		Long versionId = deleteVersion(documentId, versionNo);
+		audit.log(AuditEventType.VERSION_DELETE, AuditResult.SUCCESS, me.getId(), "DOCUMENT_VERSION", versionId,
+				"documentId=" + documentId + " versionNo=" + versionNo);
 	}
 
 	/**
@@ -205,9 +245,10 @@ public class VersionService {
 	 * @param documentId AccessPolicy.writeOrThrow()를 통과한 문서 (등록자 본인)
 	 * @throws VersionNotFoundException   없는 버전 (404)
 	 * @throws DeleteNotAllowedException 버전이 하나뿐이거나 업로드 후처리 중 (400)
+	 * @return 지운 버전의 ID (감사 로그 대상)
 	 */
 	@Transactional
-	public void deleteVersion(Long documentId, int versionNo) {
+	public Long deleteVersion(Long documentId, int versionNo) {
 		Document document = documents.findById(documentId).orElseThrow(() -> new DocumentNotFoundException(documentId));
 		if (document.getStatus() == DocumentStatus.PROCESSING) {
 			throw new DeleteNotAllowedException("document is processing: documentId=" + documentId);
@@ -246,6 +287,7 @@ public class VersionService {
 				startRebuild(documentId, fromId, toId, reindexId);
 			}
 		});
+		return target.getId();
 	}
 
 	private static int indexOf(List<DocumentVersion> all, int versionNo) {

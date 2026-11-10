@@ -24,6 +24,8 @@ public enum AuditEventType {
 
     /** 버전 — VersionService (손인선) */
     VERSION_UPLOAD,
+    /** 업로드 거부 (권한·파일 검증). 실패 단계(reason)만 남기고 원본 파일명은 남기지 않는다 (DB 설계서 3.3) */
+    VERSION_UPLOAD_FAILED,
     VERSION_DELETE,
 
     /** 열람 권한 — PermissionService·InvitationService (홍서연, 이슈 G·H) */
@@ -33,5 +35,7 @@ public enum AuditEventType {
     PERMISSION_REJECT,
 
     /** 질의응답 — ChatService (정세진). 문서 ID만 남기고 질문 원문은 기록하지 않는다 */
-    CHAT_QUESTION
+    CHAT_QUESTION,
+    /** AI 답변의 근거가 검색 범위 밖이라 답변을 버림. 범위 밖 버전 ID만 남긴다 (DB 설계서 3.3) */
+    SOURCE_CHECK_FAILED
 }

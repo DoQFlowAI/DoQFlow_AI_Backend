@@ -39,7 +39,7 @@ class VersionReadTest {
 	@BeforeEach
 	void setUp() {
 		versions = mock(DocumentVersionRepository.class);
-		service = new VersionService(null, versions, null, null, null, null, 1_048_576);
+		service = new VersionService(null, versions, null, null, null, null, null, 1_048_576);
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
 		document = Document.builder().name("운영지침").uploadedBy(lead).build();
 		ReflectionTestUtils.setField(document, "id", DOCUMENT_ID);
@@ -117,7 +117,7 @@ class VersionReadTest {
 	@Test
 	@DisplayName("단건 본문은 상한을 넘으면 잘리고 잘렸다고 표시한다")
 	void detailContentIsTruncatedOverLimit() {
-		VersionService small = new VersionService(null, versions, null, null, null, null, 6);
+		VersionService small = new VersionService(null, versions, null, null, null, null, null, 6);
 		DocumentVersion longText = version(5);
 		longText.completeExtraction("가나다라");
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 5)).thenReturn(Optional.of(longText));

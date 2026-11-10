@@ -8,6 +8,7 @@ import com.rookies6.DoQFlowAI.exception.UserNotFoundException;
 import com.rookies6.DoQFlowAI.repository.AppUserRepository;
 import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import com.rookies6.DoQFlowAI.security.CurrentUser;
+import com.rookies6.DoQFlowAI.security.RateLimiter;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class UserController {
 
     private final AccessPolicy accessPolicy;
     private final AppUserRepository users;
+    private final RateLimiter rateLimiter;
 
     /**
      * 내 정보 < API 4.5 >
@@ -47,6 +49,8 @@ public class UserController {
             @CurrentUser AppUser me,
             @RequestParam @Email @NotBlank String email) {
 
+        // 분당 30회 (API 5.1). 이메일을 하나씩 넣어 보며 가입 여부를 알아내는 것을 늦춘다
+        rateLimiter.checkLookup(me.getId());
         accessPolicy.registerOrThrow(me.getId());
 
         AppUser target = users.findByEmail(email)

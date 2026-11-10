@@ -18,6 +18,8 @@ import com.rookies6.DoQFlowAI.dto.ai.AiChat;
 import com.rookies6.DoQFlowAI.dto.response.ChatMessageResponse;
 import com.rookies6.DoQFlowAI.dto.response.ChatSourceResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
 import com.rookies6.DoQFlowAI.entity.ChatMessage;
 import com.rookies6.DoQFlowAI.entity.ChatSession;
 import com.rookies6.DoQFlowAI.entity.Document;
@@ -41,6 +43,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -59,6 +62,7 @@ class ChatServiceTest {
 	private ChatHistoryWriter writer;
 	private AiClientService aiClient;
 	private DocumentPermissionRepository permissions;
+	private AuditService audit;
 	private ChatService service;
 	private AppUser me;
 	private ChatSession session;
@@ -73,7 +77,9 @@ class ChatServiceTest {
 		permissions = mock(DocumentPermissionRepository.class);
 		// isOwner는 문서의 등록자 ID만 본다. Repository는 쓰지 않으므로 null
 		AccessPolicy accessPolicy = new AccessPolicy(null, null, null, null);
-		service = new ChatService(sessions, messages, sources, writer, aiClient, accessPolicy, permissions, 1000, 5);
+		audit = mock(AuditService.class);
+		service = new ChatService(sessions, messages, sources, writer, aiClient, accessPolicy, permissions, audit,
+				1000, 5);
 
 		me = AppUser.builder().email("staff@example.com").passwordHash("x").name("사원").rankLevel(1).build();
 		ReflectionTestUtils.setField(me, "id", 3L);
@@ -157,6 +163,64 @@ class ChatServiceTest {
 			service.ask(me, SESSION_ID, "가".repeat(1000), List.of());
 
 			verify(writer).saveNoAnswer(eq(SESSION_ID), anyString(), anyString());
+		}
+	}
+
+	@Nested
+	@DisplayName("감사 로그")
+	class AuditLogging {
+
+		@Test
+		@DisplayName("답변을 돌려주면 범위 크기와 근거 문서 ID만 남기고 질문 원문은 남기지 않는다")
+		void chatQuestionHasScopeAndSourceDocumentsOnly() {
+			AiChat.Result result = answer(List.of(33L), List.of(chunk(33L)));
+			when(aiClient.chat(anyString(), anyList(), anyInt())).thenReturn(result);
+			when(writer.saveAnswer(SESSION_ID, QUESTION, result)).thenReturn(Optional.of(new ChatAnswer(100L, false,
+					result.tokens(), List.of(new ChatSourceResponse(7L, "출장 규정", 3, 12, "조각"),
+							new ChatSourceResponse(7L, "출장 규정", 3, 13, "조각2")))));
+
+			service.ask(me, SESSION_ID, QUESTION, List.of(33L, 41L));
+
+			ArgumentCaptor<String> detail = ArgumentCaptor.forClass(String.class);
+			verify(audit).log(eq(AuditEventType.CHAT_QUESTION), eq(AuditResult.SUCCESS), eq(3L), eq("CHAT_SESSION"),
+					eq(SESSION_ID), detail.capture());
+			assertThat(detail.getValue()).isEqualTo("scopeSize=2 sourceDocumentIds=[7]").doesNotContain("출장비");
+			verify(audit, never()).log(eq(AuditEventType.SOURCE_CHECK_FAILED), any(), any(), any(), any(), any());
+		}
+
+		@Test
+		@DisplayName("근거 재확인에 실패하면 범위 밖 버전 ID를 남기고 질문 기록의 근거는 비어 있다")
+		void sourceCheckFailureLogsOutOfScopeIds() {
+			when(aiClient.chat(anyString(), anyList(), anyInt()))
+					.thenReturn(answer(List.of(33L, 52L), List.of(chunk(33L), chunk(61L))));
+
+			service.ask(me, SESSION_ID, QUESTION, List.of(33L));
+
+			verify(audit).log(AuditEventType.SOURCE_CHECK_FAILED, AuditResult.FAILURE, 3L, "CHAT_SESSION", SESSION_ID,
+					"scopeSize=1 outOfScopeVersionIds=[52, 61]");
+			verify(audit).log(AuditEventType.CHAT_QUESTION, AuditResult.SUCCESS, 3L, "CHAT_SESSION", SESSION_ID,
+					"scopeSize=1 sourceDocumentIds=[]");
+		}
+
+		@Test
+		@DisplayName("검색 범위가 비어도 질문은 기록한다")
+		void emptyScopeStillLogsQuestion() {
+			service.ask(me, SESSION_ID, QUESTION, List.of());
+
+			verify(audit).log(AuditEventType.CHAT_QUESTION, AuditResult.SUCCESS, 3L, "CHAT_SESSION", SESSION_ID,
+					"scopeSize=0 sourceDocumentIds=[]");
+		}
+
+		@Test
+		@DisplayName("AI Module 실패나 잘못된 질문은 처리되지 않았으므로 기록하지 않는다")
+		void failedRequestsAreNotLogged() {
+			when(aiClient.chat(anyString(), anyList(), anyInt())).thenThrow(new AiModuleException("down"));
+
+			assertThatThrownBy(() -> service.ask(me, SESSION_ID, QUESTION, List.of(33L)))
+					.isInstanceOf(AiModuleException.class);
+			assertThatThrownBy(() -> service.ask(me, SESSION_ID, " ", List.of(33L)))
+					.isInstanceOf(BusinessException.class);
+			verify(audit, never()).log(any(), any(), any(), any(), any(), any());
 		}
 	}
 
