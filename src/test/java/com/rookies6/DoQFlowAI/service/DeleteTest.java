@@ -98,7 +98,7 @@ class DeleteTest {
 
 		@BeforeEach
 		void setUp() throws Exception {
-			service = new VersionService(documents, versions, null, storage, processor, null, 1_048_576);
+			service = new VersionService(documents, versions, null, storage, processor, null, null, 1_048_576);
 			v1 = version(11, 1, "a");
 			v2 = version(12, 2, "b");
 			v2.updateDiff("[]", 1);

@@ -53,7 +53,7 @@ class VersionServiceTest {
 	void returnsVersionContent() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 3)).thenReturn(Optional.of(textVersion(3, "1. 목적")));
 
-		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, 1_048_576).getContent(document, 3);
+		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, null, 1_048_576).getContent(document, 3);
 
 		assertThat(response.versionNo()).isEqualTo(3);
 		assertThat(response.content()).isEqualTo("1. 목적");
@@ -65,7 +65,7 @@ class VersionServiceTest {
 	void truncatesToConfiguredLimit() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 1)).thenReturn(Optional.of(textVersion(1, "가".repeat(10))));
 
-		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, 10).getContent(document, 1);
+		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, null, 10).getContent(document, 1);
 
 		assertThat(response.content()).isEqualTo("가가가");
 		assertThat(response.truncated()).isTrue();
@@ -76,7 +76,7 @@ class VersionServiceTest {
 	void missingVersionIs404() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 9)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> new VersionService(null, versions, null, null, null, null, 1_048_576).getContent(document, 9))
+		assertThatThrownBy(() -> new VersionService(null, versions, null, null, null, null, null, 1_048_576).getContent(document, 9))
 				.isInstanceOf(VersionNotFoundException.class)
 				.extracting(e -> ((VersionNotFoundException) e).getErrorCode())
 				.isEqualTo(ErrorCode.DOCUMENT_NOT_FOUND);
