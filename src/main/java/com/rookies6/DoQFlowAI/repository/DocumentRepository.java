@@ -4,6 +4,7 @@ import com.rookies6.DoQFlowAI.entity.Document;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -50,4 +51,17 @@ public interface DocumentRepository extends JpaRepository<Document, Long> {
 			                  and p.status = com.rookies6.DoQFlowAI.entity.PermissionStatus.ACCEPTED)
 			""")
 	Page<Document> findAccessible(@Param("userId") Long userId, Pageable pageable);
+
+	/**
+	 * 기동 시 복구 — 끊긴 후처리로 PROCESSING에 남은 문서를 FAILED로 (ProcessingRecovery). 바꾼 행 수
+	 * updated_at도 함께 바꾼다. 일괄 UPDATE는 엔티티의 @PreUpdate를 거치지 않는다.
+	 * 시각은 앱이 넘긴다 (@PreUpdate와 같은 LocalDateTime.now(). DB 시간대가 달라도 어긋나지 않게).
+	 */
+	@Modifying(clearAutomatically = true)
+	@Query("""
+			update Document d set d.status = com.rookies6.DoQFlowAI.entity.DocumentStatus.FAILED,
+			       d.updatedAt = :now
+			 where d.status = com.rookies6.DoQFlowAI.entity.DocumentStatus.PROCESSING
+			""")
+	int failAllProcessing(@Param("now") java.time.LocalDateTime now);
 }

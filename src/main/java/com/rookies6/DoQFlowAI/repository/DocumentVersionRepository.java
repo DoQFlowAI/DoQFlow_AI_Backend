@@ -5,6 +5,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -67,4 +68,12 @@ public interface DocumentVersionRepository extends JpaRepository<DocumentVersion
 			""")
 	List<Long> findLatestIdsByDocumentIds(@Param("documentIds") Collection<Long> documentIds,
 			@Param("userId") Long userId);
+
+	/** 기동 시 복구 — 끊긴 후처리로 PROCESSING에 남은 버전을 FAILED로 (ProcessingRecovery). 바꾼 행 수 */
+	@Modifying(clearAutomatically = true)
+	@Query("""
+			update DocumentVersion v set v.status = com.rookies6.DoQFlowAI.entity.VersionStatus.FAILED
+			 where v.status = com.rookies6.DoQFlowAI.entity.VersionStatus.PROCESSING
+			""")
+	int failAllProcessing();
 }

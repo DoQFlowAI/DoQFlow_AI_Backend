@@ -3,6 +3,9 @@ server:
   # 모든 API가 /api 아래에 있다. 화면은 /api로만 요청한다 (Frontend 개발 명세서 3장).
   # 컨트롤러 경로에는 /api를 쓰지 않는다 (API 설계서의 경로 표기와 같음: /documents = /api/documents)
   servlet.context-path: /api
+  # 종료 신호를 받으면 새 요청을 받지 않고 진행 중인 요청을 마친 뒤 끈다.
+  # 업로드 후처리 스레드풀은 AsyncConfig에서 최대 60초 기다린다. 그래도 끊긴 작업은 ProcessingRecovery가 기동 시 정리한다
+  shutdown: graceful
   error:
     include-stacktrace: never
     include-message: never
