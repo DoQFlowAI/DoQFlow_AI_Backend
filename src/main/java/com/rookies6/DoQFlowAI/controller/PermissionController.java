@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.rookies6.DoQFlowAI.dto.request.InviteRequest;
+import com.rookies6.DoQFlowAI.dto.response.InviteResponse;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 
 /** 열람 권한 관리 < API 5.7, 5.8 > */
 @RestController
@@ -27,5 +32,16 @@ public class PermissionController {
             @PathVariable Long documentId) {
 
         return ApiResponse.ok(permissionService.list(me.getId(), documentId));
+    }
+
+    /** 열람자 추가 초대 < API 5.7 > — 등록자만 */
+    @PostMapping
+    public ApiResponse<InviteResponse> invite(
+            @CurrentUser AppUser me,
+            @PathVariable Long documentId,
+            @Valid @RequestBody InviteRequest request) {
+
+        return ApiResponse.ok(permissionService.invite(
+                me.getId(), documentId, request.inviteeEmails()));
     }
 }
