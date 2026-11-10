@@ -16,6 +16,8 @@ import com.rookies6.DoQFlowAI.entity.DocumentPermission;
 import com.rookies6.DoQFlowAI.entity.PermissionStatus;
 import com.rookies6.DoQFlowAI.repository.AppUserRepository;
 import java.util.ArrayList;
+import com.rookies6.DoQFlowAI.exception.PermissionRevokeNotAllowedException;
+import com.rookies6.DoQFlowAI.exception.UserNotFoundException;
 
 /** 열람 권한 관리 < API 5.7, 5.8 > */
 @Service
@@ -95,5 +97,34 @@ public class PermissionService {
         }
 
         return new InviteResponse(invited, notFound);
+    }
+
+    /**
+     * 열람 권한 회수 < API 5.8 > — 204
+     *
+     * <p>상태와 무관하게 행을 삭제한다. PENDING 초대 취소도 같은 경로다.
+     *
+     * <p>행이 없어도 오류로 보지 않는다. 결과가 "그 사람은 권한이 없다"로
+     * 같으므로 재시도해도 같은 응답이 나가야 한다.
+     */
+    @Transactional
+    public void revoke(Long userId, Long documentId, String targetUuid) {
+        Document document = accessPolicy.writeOrThrow(userId, documentId);
+
+        AppUser target = users.findByPublicId(targetUuid)
+                .orElseThrow(() -> new UserNotFoundException("uuid=" + targetUuid));
+
+        // 등록자 본인을 회수하면 그 문서를 관리할 사람이 없어진다
+        if (accessPolicy.isOwner(document, target.getId())) {
+            throw new PermissionRevokeNotAllowedException(
+                    "cannot revoke the uploader: documentId=" + documentId);
+        }
+
+        permissions.findByDocumentIdAndUserId(documentId, target.getId())
+                .ifPresent(permissions::delete);
+
+        audit.log(AuditEventType.PERMISSION_REVOKE, AuditResult.SUCCESS,
+                userId, "DOCUMENT", documentId,
+                "revoked: " + AuditService.maskEmail(target.getEmail()));
     }
 }

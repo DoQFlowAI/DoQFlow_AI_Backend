@@ -16,6 +16,9 @@ import com.rookies6.DoQFlowAI.dto.response.InviteResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 
 /** 열람 권한 관리 < API 5.7, 5.8 > */
 @RestController
@@ -43,5 +46,16 @@ public class PermissionController {
 
         return ApiResponse.ok(permissionService.invite(
                 me.getId(), documentId, request.inviteeEmails()));
+    }
+
+    /** 열람 권한 회수 < API 5.8 > — 등록자만. 204 */
+    @DeleteMapping("/{userUuid}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void revoke(
+            @CurrentUser AppUser me,
+            @PathVariable Long documentId,
+            @PathVariable String userUuid) {
+
+        permissionService.revoke(me.getId(), documentId, userUuid);
     }
 }
