@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.rookies6.DoQFlowAI.service.DiffBlock;
 import java.time.Instant;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -19,7 +20,8 @@ class VersionHistoryJsonTest {
 	private final JsonMapper mapper = JsonMapper.builder().build();
 
 	@Test
-	void 시각은_ISO_8601_UTC_문자열로_나간다() {
+	@DisplayName("시각은 ISO-8601 UTC 문자열로 나간다")
+	void serializesTimeAsIsoUtcString() {
 		HistoryResponse.VersionItem item = new HistoryResponse.VersionItem(
 				1, "v1.pdf", Instant.parse("2026-11-06T09:30:00Z"));
 
@@ -27,7 +29,8 @@ class VersionHistoryJsonTest {
 	}
 
 	@Test
-	void 비교_응답의_변경_블록_필드명은_diffJson이다() {
+	@DisplayName("비교 응답의 변경 블록 필드명은 diffJson이다")
+	void compareResponseNamesBlocksDiffJson() {
 		CompareResponse response = new CompareResponse(1, 4, "a", "b", 1,
 				List.of(new DiffBlock("CHANGE", 0, 1, 0, 1)));
 

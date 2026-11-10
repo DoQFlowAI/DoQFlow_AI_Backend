@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -94,7 +95,8 @@ class SearchScopeQueryIntegrationTest {
 	}
 
 	@Test
-	void 읽을_수_있고_READY인_문서의_최신_버전만_들어간다() {
+	@DisplayName("읽을 수 있고 READY인 문서의 최신 버전만 들어간다")
+	void includesOnlyLatestVersionOfReadableReadyDocuments() {
 		Document mine = document(me, DocumentStatus.READY);
 		version(mine, 1, true);
 		DocumentVersion mineLatest = version(mine, 2, true);
@@ -107,7 +109,8 @@ class SearchScopeQueryIntegrationTest {
 	}
 
 	@Test
-	void 수락하지_않았거나_초대받지_않은_문서는_빠진다() {
+	@DisplayName("수락하지 않았거나 초대받지 않은 문서는 빠진다")
+	void excludesPendingAndUninvitedDocuments() {
 		Document pending = document(other, DocumentStatus.READY);
 		version(pending, 1, true);
 		invite(pending, PermissionStatus.PENDING);
@@ -119,7 +122,8 @@ class SearchScopeQueryIntegrationTest {
 	}
 
 	@Test
-	void 후처리_중이거나_실패했거나_버전이_없는_문서는_빠진다() {
+	@DisplayName("후처리 중이거나 실패했거나 버전이 없는 문서는 빠진다")
+	void excludesProcessingFailedAndEmptyDocuments() {
 		version(document(me, DocumentStatus.PROCESSING), 1, true);
 		version(document(me, DocumentStatus.FAILED), 1, true);
 		document(me, DocumentStatus.EMPTY);
@@ -128,7 +132,8 @@ class SearchScopeQueryIntegrationTest {
 	}
 
 	@Test
-	void 마지막_버전의_추출이_실패했으면_빠진다() {
+	@DisplayName("마지막 버전의 추출이 실패했으면 빠진다")
+	void excludesDocumentWhoseLatestVersionFailed() {
 		Document document = document(me, DocumentStatus.READY);
 		version(document, 1, true);
 		version(document, 2, false); // 마지막 버전 FAILED. 이전 버전으로 대신 검색하지 않는다
@@ -137,7 +142,8 @@ class SearchScopeQueryIntegrationTest {
 	}
 
 	@Test
-	void 검색할_문서가_하나도_없으면_빈_목록이라_LLM을_부르지_않는다() {
+	@DisplayName("검색할 문서가 하나도 없으면 빈 목록이라 LLM을 부르지 않는다")
+	void returnsEmptyScopeWhenNothingSearchable() {
 		assertThat(scope()).isEmpty();
 	}
 }
