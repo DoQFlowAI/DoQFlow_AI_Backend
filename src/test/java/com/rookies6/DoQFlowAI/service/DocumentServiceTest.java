@@ -47,7 +47,7 @@ class DocumentServiceTest {
 	void setUp() {
 		documents = mock(DocumentRepository.class);
 		versions = mock(DocumentVersionRepository.class);
-		service = new DocumentService(documents, versions, null, null, org.mockito.Mockito.mock(com.rookies6.DoQFlowAI.security.AccessPolicy.class));
+		service = new DocumentService(documents, versions, null, null, org.mockito.Mockito.mock(com.rookies6.DoQFlowAI.security.AccessPolicy.class), null, null);
 
 		lead = user(1L, "lead@example.com", "팀장", 2);
 		staff = user(2L, "staff@example.com", "사원", 1);

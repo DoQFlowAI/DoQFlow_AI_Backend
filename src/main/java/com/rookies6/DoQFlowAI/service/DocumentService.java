@@ -1,12 +1,17 @@
 package com.rookies6.DoQFlowAI.service;
 
+import com.rookies6.DoQFlowAI.dto.request.DocumentCreateRequest;
 import com.rookies6.DoQFlowAI.dto.request.DocumentListRequest;
 import com.rookies6.DoQFlowAI.dto.request.DocumentUpdateRequest;
+import com.rookies6.DoQFlowAI.dto.response.DocumentCreateResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentDetailResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentSummaryResponse;
 import com.rookies6.DoQFlowAI.dto.response.DocumentUpdateResponse;
+import com.rookies6.DoQFlowAI.dto.response.InviteResponse;
 import com.rookies6.DoQFlowAI.dto.response.PageResponse;
 import com.rookies6.DoQFlowAI.entity.AppUser;
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
 import com.rookies6.DoQFlowAI.exception.AiModuleException;
@@ -15,19 +20,24 @@ import com.rookies6.DoQFlowAI.exception.DocumentNotFoundException;
 import com.rookies6.DoQFlowAI.repository.DocumentRepository;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import com.rookies6.DoQFlowAI.security.AccessPolicy;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 문서 서비스 < API 8, API 9, API 10, API 11 >
+ * 문서 서비스 < API 7, API 8, API 9, API 10, API 11 >
  *
  * 권한 판정은 Backend 개발 명세서 5.2대로 서비스 계층에서 AccessPolicy를 거친다.
  * 컨트롤러는 AppUser를 받는 메서드만 부른다. 이 메서드들이 트랜잭션 안에서 AccessPolicy를 먼저 호출한다
+ *   등록 registerOrThrow - 팀장이 아니면 403
  *   읽기 readOrNotFound - 없는 문서·권한 밖 모두 404
  *   쓰기 writeOrThrow   - 읽을 수 없으면 404, 읽을 수는 있으나 등록자가 아니면 403
  * documentId만 받는 메서드는 권한 판정을 통과한 뒤의 처리다 (단위·통합 테스트도 이것을 쓴다).
+ *
+ * 감사 로그 — DOCUMENT_CREATE·UPDATE·DELETE (DB 설계서 3.3). 이메일 원문은 남기지 않는다.
  */
 @Slf4j
 @Service
@@ -40,6 +50,35 @@ public class DocumentService {
 	private final VersionFileStorage storage;
 	private final AiClientService aiClient;
 	private final AccessPolicy accessPolicy;
+	private final PermissionService permissionService;
+	private final AuditService audit;
+
+	/**
+	 * 문서 생성 + 초대 < API 7 > (API 설계서 5.2) — 팀장만. 201
+	 *
+	 * 문서를 만들고 같은 트랜잭션에서 초대한다 (Backend 개발 명세서 4.3). 파일은 버전 업로드(API 18)로 따로 올린다.
+	 * 초대는 PermissionService.invite를 그대로 쓴다: 미가입 이메일은 오류가 아니라 notFound로 돌려주고,
+	 * 등록자 자신과 이미 PENDING·ACCEPTED인 사람은 건너뛰며, 초대 건당 PERMISSION_GRANT를 남긴다.
+	 * 이메일은 요청에서 소문자로 바꾸고 중복을 지운 뒤 넘긴다 (최대 50개는 요청 검증).
+	 *
+	 * @throws com.rookies6.DoQFlowAI.exception.ForbiddenException 사원 (403)
+	 */
+	@Transactional
+	public DocumentCreateResponse create(AppUser me, DocumentCreateRequest request) {
+		accessPolicy.registerOrThrow(me.getId());
+		Document document = documents.save(Document.builder()
+				.name(request.name())
+				.description(request.description())
+				.uploadedBy(me)
+				.build());
+
+		InviteResponse invite = permissionService.invite(me.getId(), document.getId(),
+				request.distinctInviteeEmails());
+
+		audit.log(AuditEventType.DOCUMENT_CREATE, AuditResult.SUCCESS, me.getId(), "DOCUMENT", document.getId(),
+				"invited=" + invite.invited() + " notFound=" + invite.notFound().size());
+		return DocumentCreateResponse.of(document, invite.invited(), invite.notFound());
+	}
 
 	/**
 	 * 문서 목록 < API 8 >
@@ -79,7 +118,22 @@ public class DocumentService {
 	@Transactional
 	public DocumentUpdateResponse update(AppUser me, Long documentId, DocumentUpdateRequest request) {
 		accessPolicy.writeOrThrow(me.getId(), documentId);
-		return update(documentId, request);
+		DocumentUpdateResponse response = update(documentId, request);
+		audit.log(AuditEventType.DOCUMENT_UPDATE, AuditResult.SUCCESS, me.getId(), "DOCUMENT", documentId,
+				"fields=" + changedFields(request));
+		return response;
+	}
+
+	// 바뀐 값이 아니라 필드 이름만 남긴다
+	private static String changedFields(DocumentUpdateRequest request) {
+		List<String> fields = new ArrayList<>(2);
+		if (request.name() != null) {
+			fields.add("name");
+		}
+		if (request.description() != null) {
+			fields.add("description");
+		}
+		return String.join(",", fields);
 	}
 
 	/**
@@ -111,6 +165,7 @@ public class DocumentService {
 	public void delete(AppUser me, Long documentId) {
 		accessPolicy.writeOrThrow(me.getId(), documentId);
 		delete(documentId);
+		audit.log(AuditEventType.DOCUMENT_DELETE, AuditResult.SUCCESS, me.getId(), "DOCUMENT", documentId, null);
 	}
 
 	/**
