@@ -59,7 +59,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * 문서·버전·변천사·비교·원문 보기·질의응답 API 통합 테스트 < API 8~11, 18~25, 27 >
+ * 문서·버전·변천사·비교·원문 보기·대화·질의응답 API 통합 테스트 < API 8~11, 18~27 >
  *
  * 실제 MariaDB, 실제 보안 필터(JWT), 실제 컨트롤러·서비스·AccessPolicy로 HTTP 요청을 보낸다. AI Module만 가짜다.
  * 확인하는 것 — 응답 봉투와 상태 코드(200·201·204), 토큰 없음 401, 권한 밖 404, 등록자 아님 403,
@@ -310,6 +310,55 @@ class ApiControllerIntegrationTest {
 						.content("{\"sessionId\": " + leadSession + ", \"question\": \"  \"}"))
 				.andExpect(status().isBadRequest());
 		verify(ai, never()).chat(anyString(), anyList(), anyInt());
+	}
+
+	@Test
+	@DisplayName("대화 기록은 본인만 보고 처리 중인 문서의 답변은 보이며 권한이 회수되면 답변을 가린다")
+	void historyShowsOwnMessagesAndMasksAfterRevoke() throws Exception {
+		uploadTwoVersionsAndWait();
+		Long latestVersionId = versions.findTopByDocumentIdOrderByVersionNoDesc(documentId).orElseThrow().getId();
+		when(ai.chat(anyString(), anyList(), anyInt())).thenReturn(new AiChat.Result(
+				List.of("결재는", " 실장이 승인합니다."), List.of(latestVersionId),
+				List.of(new AiChat.Chunk(latestVersionId, documentId, 2, null, 0, "결재는 실장이 승인한다.")), false));
+		long sessionId = createSession(invitedToken);
+		ask(invitedToken, sessionId, "결재는 누가 승인해?");
+
+		mvc.perform(get("/chat/sessions/{id}/messages", sessionId).header(HttpHeaders.AUTHORIZATION, invitedToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.data.length()").value(2))
+				.andExpect(jsonPath("$.data[0].role").value("USER"))
+				.andExpect(jsonPath("$.data[0].content").value("결재는 누가 승인해?"))
+				.andExpect(jsonPath("$.data[0].masked").doesNotExist())
+				.andExpect(jsonPath("$.data[1].role").value("ASSISTANT"))
+				.andExpect(jsonPath("$.data[1].masked").value(false))
+				.andExpect(jsonPath("$.data[1].content").value("결재는 실장이 승인합니다."))
+				.andExpect(jsonPath("$.data[1].sources[0].documentId").value(documentId))
+				.andExpect(jsonPath("$.data[1].sources[0].documentName").value("운영지침"));
+
+		// 남의 대화는 404, 토큰이 없으면 401
+		mvc.perform(get("/chat/sessions/{id}/messages", sessionId).header(HttpHeaders.AUTHORIZATION, leadToken))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.error.code").value("DOCUMENT_NOT_FOUND"));
+		mvc.perform(get("/chat/sessions/{id}/messages", sessionId)).andExpect(status().isUnauthorized());
+
+		// 새 버전을 처리 중이어도 읽을 수 있는 문서이므로 가리지 않는다
+		tx.executeWithoutResult(status -> documents.findById(documentId).orElseThrow()
+				.changeStatus(DocumentStatus.PROCESSING));
+		mvc.perform(get("/chat/sessions/{id}/messages", sessionId).header(HttpHeaders.AUTHORIZATION, invitedToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[1].masked").value(false));
+
+		// 권한을 회수하면 답변 전체를 가리고 질문은 그대로 보인다
+		tx.executeWithoutResult(status -> em.createQuery(
+						"delete from DocumentPermission p where p.document.id = :documentId")
+				.setParameter("documentId", documentId).executeUpdate());
+		mvc.perform(get("/chat/sessions/{id}/messages", sessionId).header(HttpHeaders.AUTHORIZATION, invitedToken))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data[0].content").value("결재는 누가 승인해?"))
+				.andExpect(jsonPath("$.data[1].masked").value(true))
+				.andExpect(jsonPath("$.data[1].content").value(""))
+				.andExpect(jsonPath("$.data[1].sources.length()").value(0));
 	}
 
 	private long createSession(String token) throws Exception {

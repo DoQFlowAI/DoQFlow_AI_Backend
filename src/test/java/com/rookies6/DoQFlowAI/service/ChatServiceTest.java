@@ -30,7 +30,9 @@ import com.rookies6.DoQFlowAI.exception.ChatSessionNotFoundException;
 import com.rookies6.DoQFlowAI.exception.ErrorCode;
 import com.rookies6.DoQFlowAI.repository.ChatMessageRepository;
 import com.rookies6.DoQFlowAI.repository.ChatSessionRepository;
+import com.rookies6.DoQFlowAI.repository.DocumentPermissionRepository;
 import com.rookies6.DoQFlowAI.repository.MessageSourceRepository;
+import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,6 +58,7 @@ class ChatServiceTest {
 	private MessageSourceRepository sources;
 	private ChatHistoryWriter writer;
 	private AiClientService aiClient;
+	private DocumentPermissionRepository permissions;
 	private ChatService service;
 	private AppUser me;
 	private ChatSession session;
@@ -67,7 +70,10 @@ class ChatServiceTest {
 		sources = mock(MessageSourceRepository.class);
 		writer = mock(ChatHistoryWriter.class);
 		aiClient = mock(AiClientService.class);
-		service = new ChatService(sessions, messages, sources, writer, aiClient, null, 1000, 5);
+		permissions = mock(DocumentPermissionRepository.class);
+		// isOwner는 문서의 등록자 ID만 본다. Repository는 쓰지 않으므로 null
+		AccessPolicy accessPolicy = new AccessPolicy(null, null, null, null);
+		service = new ChatService(sessions, messages, sources, writer, aiClient, accessPolicy, permissions, 1000, 5);
 
 		me = AppUser.builder().email("staff@example.com").passwordHash("x").name("사원").rankLevel(1).build();
 		ReflectionTestUtils.setField(me, "id", 3L);
@@ -243,7 +249,11 @@ class ChatServiceTest {
 	class HistoryMasking {
 
 		private Document document(long id) {
-			Document document = Document.builder().name("문서" + id).uploadedBy(me).build();
+			return document(id, me);
+		}
+
+		private Document document(long id, AppUser uploadedBy) {
+			Document document = Document.builder().name("문서" + id).uploadedBy(uploadedBy).build();
 			ReflectionTestUtils.setField(document, "id", id);
 			return document;
 		}
@@ -343,6 +353,37 @@ class ChatServiceTest {
 			assertThatThrownBy(() -> service.listMessages(me, 999L, doc -> true))
 					.isInstanceOf(ChatSessionNotFoundException.class);
 			verify(messages, times(0)).findBySessionIdOrderByCreatedAtAscIdAsc(anyLong());
+		}
+
+		@Test
+		@DisplayName("내가 등록한 문서와 초대를 수락한 문서의 근거는 보이고 그 밖의 문서 근거는 가린다")
+		void showsOwnedAndAcceptedDocumentsAndMasksOthers() {
+			AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
+			ReflectionTestUtils.setField(lead, "id", 5L);
+			Document owned = document(7L);
+			Document invited = document(8L, lead);
+			Document notInvited = document(9L, lead);
+			ChatMessage a1 = message(2L, MessageRole.ASSISTANT, "답변1");
+			ChatMessage a2 = message(4L, MessageRole.ASSISTANT, "답변2");
+			ChatMessage a3 = message(6L, MessageRole.ASSISTANT, "답변3");
+			when(messages.findBySessionIdOrderByCreatedAtAscIdAsc(SESSION_ID)).thenReturn(List.of(a1, a2, a3));
+			when(sources.findByMessageIdIn(List.of(2L, 4L, 6L))).thenReturn(List.of(
+					source(a1, version(owned)), source(a2, version(invited)), source(a3, version(notInvited))));
+			when(permissions.findAccessibleDocumentIds(3L)).thenReturn(List.of(8L));
+
+			List<ChatMessageResponse> history = service.listMessages(me, SESSION_ID);
+
+			assertThat(history).extracting(ChatMessageResponse::masked).containsExactly(false, false, true);
+			assertThat(history.get(1).sources()).singleElement()
+					.satisfies(s -> assertThat(s.documentId()).isEqualTo(8L));
+		}
+
+		@Test
+		@DisplayName("남의 대화면 초대 문서를 조회하지 않고 404다")
+		void othersSessionIs404BeforeLoadingPermissions() {
+			assertThatThrownBy(() -> service.listMessages(me, 999L))
+					.isInstanceOf(ChatSessionNotFoundException.class);
+			verify(permissions, never()).findAccessibleDocumentIds(anyLong());
 		}
 	}
 }
