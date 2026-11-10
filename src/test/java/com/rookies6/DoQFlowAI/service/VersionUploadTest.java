@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -58,7 +59,7 @@ class VersionUploadTest {
 		processor = mock(VersionProcessor.class);
 		UploadFileValidator validator = new UploadFileValidator(10,
 				List.of("txt", "md", "csv", "json", "xml", "yaml", "yml", "log"), List.of("pdf", "docx"));
-		service = new VersionService(documents, versions, validator, new VersionFileStorage(uploadDir.toString()), processor,
+		service = new VersionService(documents, versions, validator, new VersionFileStorage(uploadDir.toString()), processor, null,
 				1_048_576);
 
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
@@ -97,7 +98,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 첫_업로드는_1번부터_보낸_순서대로_번호를_붙인다() throws Exception {
+	@DisplayName("첫 업로드는 1번부터 보낸 순서대로 번호를 붙인다")
+	void firstUploadNumbersFromOneInOrder() throws Exception {
 		VersionUploadResponse response = service.uploadBatch(DOCUMENT_ID,
 				List.<MultipartFile>of(pdf("v1.pdf", "a"), pdf("v2.pdf", "b")));
 
@@ -111,7 +113,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 추가_업로드는_기존_최대값_다음부터_이어진다() {
+	@DisplayName("추가 업로드는 기존 최대값 다음부터 이어진다")
+	void additionalUploadContinuesFromMax() {
 		DocumentVersion v3 = DocumentVersion.builder().document(document).versionNo(3).originalFilename("v3.pdf")
 				.storedFilename("old.pdf").mimeType("application/pdf").fileSize(1).contentHash("old-hash").build();
 		ReflectionTestUtils.setField(v3, "id", 55L);
@@ -127,7 +130,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 텍스트_계열은_본문을_바로_채워_READY_문서_계열은_PROCESSING() {
+	@DisplayName("텍스트 계열은 본문을 바로 채워 READY 문서 계열은 PROCESSING")
+	void textReadyImmediatelyDocumentProcessing() {
 		VersionUploadResponse response = service.uploadBatch(DOCUMENT_ID,
 				List.<MultipartFile>of(text("v1.md", "1. 목적\r\n이 지침은"), pdf("v2.pdf", "b")));
 
@@ -139,14 +143,16 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 저장한_뒤_후처리에_새_버전_ID를_넘긴다() {
+	@DisplayName("저장한 뒤 후처리에 새 버전 ID를 넘긴다")
+	void passesNewVersionIdsToProcessing() {
 		service.uploadBatch(DOCUMENT_ID, List.<MultipartFile>of(pdf("v1.pdf", "a"), pdf("v2.pdf", "b")));
 
 		verify(processor).process(DOCUMENT_ID, null, List.of(saved.get(0).getId(), saved.get(1).getId()));
 	}
 
 	@Test
-	void 검증에_실패하면_아무것도_저장하지_않는다() throws Exception {
+	@DisplayName("검증에 실패하면 아무것도 저장하지 않는다")
+	void savesNothingOnValidationFailure() throws Exception {
 		assertThatThrownBy(() -> service.uploadBatch(DOCUMENT_ID,
 				List.<MultipartFile>of(pdf("v1.pdf", "a"), text("v2.html", "<p>x</p>"))))
 				.isInstanceOf(UploadValidationException.class);
@@ -157,7 +163,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 직전_버전과_같은_파일이면_400() {
+	@DisplayName("직전 버전과 같은 파일이면 400")
+	void sameAsPreviousIs400() {
 		MockMultipartFile same = pdf("v2.pdf", "same");
 		String hash = new UploadFileValidator(10, List.of(), List.of("pdf"))
 				.validate(List.of(same), null).get(0).contentHash();
@@ -172,7 +179,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 저장_도중_실패하면_이미_저장한_파일을_지운다() throws Exception {
+	@DisplayName("저장 도중 실패하면 이미 저장한 파일을 지운다")
+	void removesStoredFilesOnFailure() throws Exception {
 		when(versions.save(any(DocumentVersion.class)))
 				.thenAnswer(invocation -> invocation.getArgument(0))
 				.thenThrow(new IllegalStateException("db down"));
@@ -186,7 +194,8 @@ class VersionUploadTest {
 	}
 
 	@Test
-	void 후처리_대기열이_가득_차면_문서를_FAILED로_둔다() {
+	@DisplayName("후처리 대기열이 가득 차면 문서를 FAILED로 둔다")
+	void fullQueueMarksDocumentFailed() {
 		doThrow(new TaskRejectedException("queue full")).when(processor).process(any(), any(), anyList());
 
 		service.uploadBatch(DOCUMENT_ID, List.<MultipartFile>of(pdf("v1.pdf", "a")));

@@ -43,6 +43,7 @@ import java.util.UUID;
 import java.util.function.BooleanSupplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -124,7 +125,8 @@ class VersionPipelineIntegrationTest {
 	}
 
 	@Test
-	void 업로드부터_삭제까지_한_흐름() throws Exception {
+	@DisplayName("업로드부터 삭제까지 한 흐름")
+	void fullFlowFromUploadToDelete() throws Exception {
 		// ---------- 업로드 (텍스트 2개 + PDF 1개) ----------
 		versionService.uploadBatch(documentId, List.of(
 				text("운영지침_v1.md", "1. 목적\n결재는 팀장이 승인한다.\n끝"),

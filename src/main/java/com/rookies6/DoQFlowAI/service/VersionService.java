@@ -3,6 +3,7 @@ package com.rookies6.DoQFlowAI.service;
 import com.rookies6.DoQFlowAI.dto.response.VersionContentResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionResponse;
 import com.rookies6.DoQFlowAI.dto.response.VersionUploadResponse;
+import com.rookies6.DoQFlowAI.entity.AppUser;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentStatus;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
@@ -11,6 +12,7 @@ import com.rookies6.DoQFlowAI.exception.DocumentNotFoundException;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
 import com.rookies6.DoQFlowAI.repository.DocumentRepository;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
+import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import com.rookies6.DoQFlowAI.service.UploadFileValidator.ValidatedFile;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -24,11 +26,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
-/**
- * 버전 서비스 (Backend 개발 명세서 4.3 VersionService)
+/** 버전 서비스
  *
- * 권한 확인은 컨트롤러에서 AccessPolicy로 먼저 하고(읽기 readOrNotFound, 쓰기 writeOrThrow),
- * 이 클래스는 확인이 끝난 문서를 받아 처리한다.
+ * 컨트롤러는 AppUser를 받는 메서드만 부른다. 이 메서드들이 트랜잭션 안에서 AccessPolicy를 먼저 호출한다
+ * 읽기는 readOrNotFound(404), 쓰기는 writeOrThrow(404, 등록자가 아니면 403).
+ * Document나 documentId만 받는 메서드는 권한 판정을 통과한 뒤의 처리다 (단위·통합 테스트도 이것을 쓴다).
  */
 @Slf4j
 @Service
@@ -40,6 +42,7 @@ public class VersionService {
 	private final UploadFileValidator validator;
 	private final VersionFileStorage storage;
 	private final VersionProcessor processor;
+	private final AccessPolicy accessPolicy;
 	private final int viewMaxBytes;
 
 	public VersionService(
@@ -48,13 +51,44 @@ public class VersionService {
 			UploadFileValidator validator,
 			VersionFileStorage storage,
 			VersionProcessor processor,
+			AccessPolicy accessPolicy,
 			@Value("${app.upload.view-max-bytes:1048576}") int viewMaxBytes) {
 		this.documents = documents;
 		this.versions = versions;
 		this.validator = validator;
 		this.storage = storage;
 		this.processor = processor;
+		this.accessPolicy = accessPolicy;
 		this.viewMaxBytes = viewMaxBytes;
+	}
+
+	/** 버전 일괄 업로드 < API 18 > - 등록자 본인만. 등록자가 아니면 403, 읽을 수 없으면 404 */
+	@Transactional
+	public VersionUploadResponse uploadBatch(AppUser me, Long documentId, List<MultipartFile> files) {
+		accessPolicy.writeOrThrow(me.getId(), documentId);
+		return uploadBatch(documentId, files);
+	}
+
+	/** 버전 목록 < API 19 > - 읽기 권한. 없는 문서·권한 밖은 404 */
+	public List<VersionResponse> list(AppUser me, Long documentId) {
+		return list(accessPolicy.readOrNotFound(me.getId(), documentId));
+	}
+
+	/** 버전 단건 < API 20 > - 읽기 권한 */
+	public VersionResponse get(AppUser me, Long documentId, int versionNo) {
+		return get(accessPolicy.readOrNotFound(me.getId(), documentId), versionNo);
+	}
+
+	/** 원문 보기 < API 23 > - 읽기 권한 */
+	public VersionContentResponse getContent(AppUser me, Long documentId, int versionNo) {
+		return getContent(accessPolicy.readOrNotFound(me.getId(), documentId), versionNo);
+	}
+
+	/** 버전 삭제 < API 21 > - 등록자 본인만 */
+	@Transactional
+	public void deleteVersion(AppUser me, Long documentId, int versionNo) {
+		accessPolicy.writeOrThrow(me.getId(), documentId);
+		deleteVersion(documentId, versionNo);
 	}
 
 	/**

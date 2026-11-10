@@ -169,7 +169,7 @@ public class VersionProcessor {
 			List<DiffBlock> blocks) {
 		List<String> fromLines = DiffService.lines(from.getContentText());
 		List<String> toLines = DiffService.lines(to.getContentText());
-		AiHistory.RequestSegment segment = new AiHistory.RequestSegment(
+		AiHistory.RequestSegment segment = AiHistory.RequestSegment.of(
 				from.getVersionNo(),
 				to.getVersionNo(),
 				blocks.stream().map(block -> AiHistory.Block.of(block, fromLines, toLines)).toList());

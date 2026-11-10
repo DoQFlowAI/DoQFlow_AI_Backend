@@ -24,6 +24,7 @@ import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Page;
@@ -46,7 +47,7 @@ class DocumentServiceTest {
 	void setUp() {
 		documents = mock(DocumentRepository.class);
 		versions = mock(DocumentVersionRepository.class);
-		service = new DocumentService(documents, versions, null, null);
+		service = new DocumentService(documents, versions, null, null, org.mockito.Mockito.mock(com.rookies6.DoQFlowAI.security.AccessPolicy.class));
 
 		lead = user(1L, "lead@example.com", "팀장", 2);
 		staff = user(2L, "staff@example.com", "사원", 1);
@@ -65,7 +66,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 목록은_요청한_페이지로_조회하고_내가_등록한_문서만_owned() {
+	@DisplayName("목록은 요청한 페이지로 조회하고 내가 등록한 문서만 owned")
+	void listUsesRequestedPageAndMarksOwned() {
 		Document mine = document(7L, lead, "배포 가이드");
 		Document invited = document(8L, staff, "운영지침");
 		when(documents.findAccessible(eq(1L), any(Pageable.class)))
@@ -86,7 +88,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 목록_기본값은_0페이지_10개_최신순() {
+	@DisplayName("목록 기본값은 0페이지 10개 최신순")
+	void listDefaultsToFirstPageTenNewest() {
 		when(documents.findAccessible(eq(1L), any(Pageable.class))).thenReturn(Page.empty());
 
 		service.list(lead, new DocumentListRequest(null, null, null));
@@ -97,7 +100,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 단건은_등록자_이메일과_버전_목록을_함께_내린다() {
+	@DisplayName("단건은 등록자 이메일과 버전 목록을 함께 내린다")
+	void detailIncludesUploaderEmailAndVersions() {
 		Document doc = document(7L, lead, "배포 가이드");
 		DocumentVersion v1 = DocumentVersion.builder().document(doc).versionNo(1).originalFilename("v1.pdf")
 				.storedFilename("uuid.pdf").mimeType("application/pdf").fileSize(1).contentHash("h").build();
@@ -114,7 +118,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 없는_문서면_404_DOCUMENT_NOT_FOUND() {
+	@DisplayName("없는 문서면 404 DOCUMENT_NOT_FOUND")
+	void missingDocumentIs404() {
 		when(documents.findById(99L)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.get(lead, 99L))
@@ -126,7 +131,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 수정은_보낸_필드만_바꾸고_flush한_뒤_응답한다() {
+	@DisplayName("수정은 보낸 필드만 바꾸고 flush한 뒤 응답한다")
+	void updateChangesSentFieldsAndFlushes() {
 		Document doc = document(7L, lead, "배포 가이드");
 		when(documents.findById(7L)).thenReturn(Optional.of(doc));
 
@@ -138,7 +144,8 @@ class DocumentServiceTest {
 	}
 
 	@Test
-	void 설명은_빈_문자열로_지울_수_있다() {
+	@DisplayName("설명은 빈 문자열로 지울 수 있다")
+	void descriptionCanBeClearedWithEmptyString() {
 		Document doc = document(7L, lead, "배포 가이드");
 		when(documents.findById(7L)).thenReturn(Optional.of(doc));
 

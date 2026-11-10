@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
@@ -39,7 +40,8 @@ class DocumentResponseJsonTest {
 	}
 
 	@Test
-	void 목록_항목은_등록자_이름과_직급만_묶어서_내린다() {
+	@DisplayName("목록 항목은 등록자 이름과 직급만 묶어서 내린다")
+	void summaryNestsUploaderNameAndRankOnly() {
 		String json = mapper.writeValueAsString(DocumentSummaryResponse.of(document, OWNER_ID));
 
 		assertThat(json).contains("\"uploadedBy\":{\"name\":\"팀장\",\"rankLevel\":2}");
@@ -49,7 +51,8 @@ class DocumentResponseJsonTest {
 	}
 
 	@Test
-	void 단건은_등록자_이메일까지_묶어서_내린다() {
+	@DisplayName("단건은 등록자 이메일까지 묶어서 내린다")
+	void detailNestsUploaderIncludingEmail() {
 		String json = mapper.writeValueAsString(DocumentDetailResponse.of(document, 99L, List.of()));
 
 		assertThat(json).contains("\"uploadedBy\":{\"name\":\"팀장\",\"email\":\"lead@example.com\",\"rankLevel\":2}");
@@ -58,14 +61,16 @@ class DocumentResponseJsonTest {
 	}
 
 	@Test
-	void 수정_응답의_시각은_ISO_8601_UTC다() {
+	@DisplayName("수정 응답의 시각은 ISO-8601 UTC다")
+	void updateResponseTimeIsIsoUtc() {
 		String json = mapper.writeValueAsString(DocumentUpdateResponse.from(document));
 
 		assertThat(json).contains("\"updatedAt\":\"2026-11-06T09:30:00Z\"");
 	}
 
 	@Test
-	void 시각이_없으면_null() {
+	@DisplayName("시각이 없으면 null")
+	void nullTimeStaysNull() {
 		assertThat(ApiTime.toInstant(null)).isNull();
 	}
 }

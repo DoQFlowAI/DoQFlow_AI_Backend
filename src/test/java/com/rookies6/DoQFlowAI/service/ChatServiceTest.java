@@ -36,6 +36,7 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -66,7 +67,7 @@ class ChatServiceTest {
 		sources = mock(MessageSourceRepository.class);
 		writer = mock(ChatHistoryWriter.class);
 		aiClient = mock(AiClientService.class);
-		service = new ChatService(sessions, messages, sources, writer, aiClient, 1000, 5);
+		service = new ChatService(sessions, messages, sources, writer, aiClient, null, 1000, 5);
 
 		me = AppUser.builder().email("staff@example.com").passwordHash("x").name("사원").rankLevel(1).build();
 		ReflectionTestUtils.setField(me, "id", 3L);
@@ -85,7 +86,8 @@ class ChatServiceTest {
 	}
 
 	@Test
-	void 대화를_만들면_제목_없이_내_대화로_저장된다() {
+	@DisplayName("대화를 만들면 제목 없이 내 대화로 저장된다")
+	void createsSessionWithoutTitle() {
 		when(sessions.save(any(ChatSession.class))).thenAnswer(inv -> {
 			ChatSession saved = inv.getArgument(0);
 			ReflectionTestUtils.setField(saved, "id", 20L);
@@ -99,10 +101,12 @@ class ChatServiceTest {
 	}
 
 	@Nested
-	class LLM_호출_전에_막는다 {
+	@DisplayName("LLM 호출 전에 막는다")
+	class BlocksBeforeLlm {
 
 		@Test
-		void scope가_비면_AI_Module을_호출하지_않고_근거_없음으로_끝낸다() {
+		@DisplayName("scope가 비면 AI Module을 호출하지 않고 근거 없음으로 끝낸다")
+		void emptyScopeEndsWithNoAnswerWithoutCallingAi() {
 			ChatAnswer result = service.ask(me, SESSION_ID, QUESTION, List.of());
 
 			assertThat(result.noAnswer()).isTrue();
@@ -111,14 +115,16 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void scope가_null이어도_호출하지_않는다() {
+		@DisplayName("scope가 null이어도 호출하지 않는다")
+		void nullScopeDoesNotCallAi() {
 			service.ask(me, SESSION_ID, QUESTION, null);
 
 			verify(aiClient, never()).chat(anyString(), anyList(), anyInt());
 		}
 
 		@Test
-		void 남의_대화거나_없는_대화면_404이고_호출하지_않는다() {
+		@DisplayName("남의 대화거나 없는 대화면 404이고 호출하지 않는다")
+		void othersOrMissingSessionIs404WithoutCallingAi() {
 			assertThatThrownBy(() -> service.ask(me, 999L, QUESTION, List.of(33L)))
 					.isInstanceOf(ChatSessionNotFoundException.class)
 					.extracting(e -> ((BusinessException) e).getErrorCode())
@@ -128,7 +134,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 질문이_비었거나_1000자를_넘으면_400이고_호출하지_않는다() {
+		@DisplayName("질문이 비었거나 1000자를 넘으면 400이고 호출하지 않는다")
+		void blankOrTooLongQuestionIs400WithoutCallingAi() {
 			for (String bad : new String[] {null, "", "   ", "가".repeat(1001)}) {
 				assertThatThrownBy(() -> service.ask(me, SESSION_ID, bad, List.of(33L)))
 						.isInstanceOf(BusinessException.class)
@@ -139,7 +146,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 질문은_1000자까지_받는다() {
+		@DisplayName("질문은 1000자까지 받는다")
+		void accepts1000CharQuestion() {
 			service.ask(me, SESSION_ID, "가".repeat(1000), List.of());
 
 			verify(writer).saveNoAnswer(eq(SESSION_ID), anyString(), anyString());
@@ -147,10 +155,12 @@ class ChatServiceTest {
 	}
 
 	@Nested
-	class 근거_재확인 {
+	@DisplayName("근거 재확인")
+	class SourceCheck {
 
 		@Test
-		void 통과한_답변만_저장하고_돌려준다() {
+		@DisplayName("통과한 답변만 저장하고 돌려준다")
+		void savesAndReturnsOnlyPassedAnswer() {
 			AiChat.Result result = answer(List.of(33L), List.of(chunk(33L)));
 			when(aiClient.chat(QUESTION, List.of(33L, 41L), 5)).thenReturn(result);
 			ChatAnswer saved = new ChatAnswer(100L, false, result.tokens(),
@@ -164,7 +174,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void sourceVersionIds가_하나라도_scope_밖이면_답변을_버린다() {
+		@DisplayName("sourceVersionIds가 하나라도 scope 밖이면 답변을 버린다")
+		void discardsAnswerWhenSourceVersionIdOutOfScope() {
 			when(aiClient.chat(anyString(), anyList(), anyInt()))
 					.thenReturn(answer(List.of(33L, 52L), List.of(chunk(33L))));
 
@@ -177,7 +188,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 근거_조각의_버전이_scope_밖이면_답변을_버린다() {
+		@DisplayName("근거 조각의 버전이 scope 밖이면 답변을 버린다")
+		void discardsAnswerWhenChunkVersionOutOfScope() {
 			when(aiClient.chat(anyString(), anyList(), anyInt()))
 					.thenReturn(answer(List.of(33L), List.of(chunk(33L), chunk(52L))));
 
@@ -186,7 +198,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 근거가_없는_답변은_버린다() {
+		@DisplayName("근거가 없는 답변은 버린다")
+		void discardsAnswerWithoutSources() {
 			when(aiClient.chat(anyString(), anyList(), anyInt())).thenReturn(answer(List.of(), List.of()));
 
 			assertThat(service.ask(me, SESSION_ID, QUESTION, List.of(33L)).noAnswer()).isTrue();
@@ -194,7 +207,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void AI_Module이_근거_없음이면_근거_없음으로_저장한다() {
+		@DisplayName("AI Module이 근거 없음이면 근거 없음으로 저장한다")
+		void savesNoAnswerWhenAiReturnsNoAnswer() {
 			when(aiClient.chat(anyString(), anyList(), anyInt())).thenReturn(AiChat.Result.noAnswerResult());
 
 			assertThat(service.ask(me, SESSION_ID, QUESTION, List.of(33L)).noAnswer()).isTrue();
@@ -202,7 +216,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 근거_버전이_그사이_삭제되면_근거_없음이다() {
+		@DisplayName("근거 버전이 그사이 삭제되면 근거 없음이다")
+		void noAnswerWhenSourceVersionDeletedMeanwhile() {
 			AiChat.Result result = answer(List.of(33L), List.of(chunk(33L)));
 			when(aiClient.chat(anyString(), anyList(), anyInt())).thenReturn(result);
 			when(writer.saveAnswer(SESSION_ID, QUESTION, result)).thenReturn(Optional.empty());
@@ -212,7 +227,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void AI_Module_실패는_502로_올리고_아무것도_저장하지_않는다() {
+		@DisplayName("AI Module 실패는 502로 올리고 아무것도 저장하지 않는다")
+		void aiFailureIs502AndSavesNothing() {
 			when(aiClient.chat(anyString(), anyList(), anyInt())).thenThrow(new AiModuleException("down"));
 
 			assertThatThrownBy(() -> service.ask(me, SESSION_ID, QUESTION, List.of(33L)))
@@ -223,7 +239,8 @@ class ChatServiceTest {
 	}
 
 	@Nested
-	class 대화_기록_가림 {
+	@DisplayName("대화 기록 가림")
+	class HistoryMasking {
 
 		private Document document(long id) {
 			Document document = Document.builder().name("문서" + id).uploadedBy(me).build();
@@ -248,7 +265,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 읽을_수_있는_근거면_그대로_보이고_권한을_잃은_근거나_삭제된_근거가_있으면_가린다() {
+		@DisplayName("읽을 수 있는 근거면 그대로 보이고 권한을 잃은 근거나 삭제된 근거가 있으면 가린다")
+		void showsReadableSourcesAndMasksRevokedOrDeleted() {
 			Document readable = document(7L);
 			Document revoked = document(8L);
 			ChatMessage q1 = message(1L, MessageRole.USER, "질문1");
@@ -287,7 +305,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 근거_없음_답변은_가리지_않는다() {
+		@DisplayName("근거 없음 답변은 가리지 않는다")
+		void doesNotMaskNoAnswerMessage() {
 			ChatMessage q = message(1L, MessageRole.USER, "질문");
 			ChatMessage a = message(2L, MessageRole.ASSISTANT, ChatService.NO_ANSWER_MESSAGE);
 			when(messages.findBySessionIdOrderByCreatedAtAscIdAsc(SESSION_ID)).thenReturn(List.of(q, a));
@@ -300,7 +319,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 같은_문서의_권한은_한_번만_판정한다() {
+		@DisplayName("같은 문서의 권한은 한 번만 판정한다")
+		void checksEachDocumentOnce() {
 			Document readable = document(7L);
 			ChatMessage a1 = message(2L, MessageRole.ASSISTANT, "답변1");
 			ChatMessage a2 = message(4L, MessageRole.ASSISTANT, "답변2");
@@ -318,7 +338,8 @@ class ChatServiceTest {
 		}
 
 		@Test
-		void 남의_대화는_404다() {
+		@DisplayName("남의 대화는 404다")
+		void othersSessionIs404() {
 			assertThatThrownBy(() -> service.listMessages(me, 999L, doc -> true))
 					.isInstanceOf(ChatSessionNotFoundException.class);
 			verify(messages, times(0)).findBySessionIdOrderByCreatedAtAscIdAsc(anyLong());

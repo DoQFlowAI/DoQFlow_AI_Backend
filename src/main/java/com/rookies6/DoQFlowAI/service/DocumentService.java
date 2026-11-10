@@ -14,6 +14,7 @@ import com.rookies6.DoQFlowAI.exception.DeleteNotAllowedException;
 import com.rookies6.DoQFlowAI.exception.DocumentNotFoundException;
 import com.rookies6.DoQFlowAI.repository.DocumentRepository;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
+import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -23,8 +24,10 @@ import org.springframework.transaction.annotation.Transactional;
  * 문서 서비스 < API 8, API 9, API 10, API 11 >
  *
  * 권한 판정은 Backend 개발 명세서 5.2대로 서비스 계층에서 AccessPolicy를 거친다.
- * TODO AccessPolicy가 들어오면 get은 readOrNotFound, update는 writeOrThrow를 이 클래스 안에서 먼저 부른다.
- * TODO create(PermissionService.invite 필요)는 이후 추가한다.
+ * 컨트롤러는 AppUser를 받는 메서드만 부른다. 이 메서드들이 트랜잭션 안에서 AccessPolicy를 먼저 호출한다
+ *   읽기 readOrNotFound - 없는 문서·권한 밖 모두 404
+ *   쓰기 writeOrThrow   - 읽을 수 없으면 404, 읽을 수는 있으나 등록자가 아니면 403
+ * documentId만 받는 메서드는 권한 판정을 통과한 뒤의 처리다 (단위·통합 테스트도 이것을 쓴다).
  */
 @Slf4j
 @Service
@@ -36,6 +39,7 @@ public class DocumentService {
 	private final DocumentVersionRepository versions;
 	private final VersionFileStorage storage;
 	private final AiClientService aiClient;
+	private final AccessPolicy accessPolicy;
 
 	/**
 	 * 문서 목록 < API 8 >
@@ -60,9 +64,22 @@ public class DocumentService {
 	 * @throws DocumentNotFoundException 없는 문서 (404, 권한 밖과 같은 응답)
 	 */
 	public DocumentDetailResponse get(AppUser me, Long documentId) {
+		accessPolicy.readOrNotFound(me.getId(), documentId);
 		Document document = load(documentId);
 		return DocumentDetailResponse.of(document, me.getId(),
 				versions.findByDocumentIdOrderByVersionNo(documentId));
+	}
+
+	/**
+	 * 문서 이름·설명 수정 < API 10 > - 등록자 본인만
+	 *
+	 * @throws DocumentNotFoundException 없는 문서·읽을 수 없는 문서 (404)
+	 * @throws com.rookies6.DoQFlowAI.exception.ForbiddenException 등록자가 아님 (403)
+	 */
+	@Transactional
+	public DocumentUpdateResponse update(AppUser me, Long documentId, DocumentUpdateRequest request) {
+		accessPolicy.writeOrThrow(me.getId(), documentId);
+		return update(documentId, request);
 	}
 
 	/**
@@ -85,6 +102,18 @@ public class DocumentService {
 	}
 
 	/**
+	 * 문서 삭제 < API 11 > - 등록자 본인만
+	 *
+	 * @throws DocumentNotFoundException 없는 문서·읽을 수 없는 문서 (404)
+	 * @throws com.rookies6.DoQFlowAI.exception.ForbiddenException 등록자가 아님 (403)
+	 */
+	@Transactional
+	public void delete(AppUser me, Long documentId) {
+		accessPolicy.writeOrThrow(me.getId(), documentId);
+		delete(documentId);
+	}
+
+	/**
 	 * 문서 삭제 < API 11 > (API 설계서 5.6)
 	 *
 	 * document 행을 지우면 DB에서 document_version·document_permission이 함께 지워지고(CASCADE),
@@ -92,8 +121,6 @@ public class DocumentService {
 	 * 벡터(DELETE /internal/index, keepVersionId = null)와 저장 파일은 커밋이 끝난 뒤에 지운다.
 	 * DB 삭제가 롤백됐는데 파일만 사라지는 일을 막기 위해서다. 둘 다 실패해도 로그만 남긴다
 	 * (질의응답 scope는 DB에서 계산하므로 남은 벡터는 검색되지 않는다).
-	 *
-	 * TODO AuditService가 들어오면 DOCUMENT_DELETE 감사 로그를 남긴다.
 	 *
 	 * @param documentId 쓰기 권한 판정(등록자 본인)을 통과한 문서
 	 * @throws DocumentNotFoundException 없는 문서 (404)

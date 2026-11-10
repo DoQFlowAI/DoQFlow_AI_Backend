@@ -20,6 +20,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
@@ -37,7 +38,7 @@ class VersionReadTest {
 	@BeforeEach
 	void setUp() {
 		versions = mock(DocumentVersionRepository.class);
-		service = new VersionService(null, versions, null, null, null, 1_048_576);
+		service = new VersionService(null, versions, null, null, null, null, 1_048_576);
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
 		document = Document.builder().name("운영지침").uploadedBy(lead).build();
 		ReflectionTestUtils.setField(document, "id", DOCUMENT_ID);
@@ -60,7 +61,8 @@ class VersionReadTest {
 	}
 
 	@Test
-	void 목록은_버전_순서대로_내리고_v1의_변경점은_null() {
+	@DisplayName("목록은 버전 순서대로 내리고 v1의 변경점은 null")
+	void listsInOrderAndV1HasNoChange() {
 		DocumentVersion v1 = version(1);
 		DocumentVersion v2 = version(2);
 		v2.updateSummary(SummaryStatus.OK, "PROCEDURE", "승인자 변경");
@@ -75,14 +77,16 @@ class VersionReadTest {
 	}
 
 	@Test
-	void 버전이_없으면_빈_목록() {
+	@DisplayName("버전이 없으면 빈 목록")
+	void emptyWhenNoVersions() {
 		when(versions.findByDocumentIdOrderByVersionNo(DOCUMENT_ID)).thenReturn(List.of());
 
 		assertThat(service.list(document)).isEmpty();
 	}
 
 	@Test
-	void 단건은_해당_버전을_내린다() {
+	@DisplayName("단건은 해당 버전을 내린다")
+	void getsSingleVersion() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 2)).thenReturn(Optional.of(version(2)));
 
 		VersionResponse response = service.get(document, 2);
@@ -93,7 +97,8 @@ class VersionReadTest {
 	}
 
 	@Test
-	void 없는_버전이면_404_DOCUMENT_NOT_FOUND() {
+	@DisplayName("없는 버전이면 404 DOCUMENT_NOT_FOUND")
+	void missingVersionIs404() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 9)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> service.get(document, 9))
@@ -103,7 +108,8 @@ class VersionReadTest {
 	}
 
 	@Test
-	void JSON은_API_설계서_필드와_같고_저장_파일명이_없다() {
+	@DisplayName("JSON은 API 설계서 필드와 같고 저장 파일명이 없다")
+	void jsonMatchesApiFieldsWithoutStoredFilename() {
 		String json = JsonMapper.builder().build().writeValueAsString(VersionResponse.from(version(1)));
 
 		assertThat(json).isEqualTo("{\"versionNo\":1,\"originalFilename\":\"v1.pdf\",\"fileSize\":184320,"
