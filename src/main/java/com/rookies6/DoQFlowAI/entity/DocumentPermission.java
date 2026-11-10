@@ -81,4 +81,15 @@ public class DocumentPermission {
 		this.grantedBy = grantedBy;
 		this.respondedAt = null;
 	}
+
+	/**
+	 * 초대에 응답한다 < API 5.9 >
+	 *
+	 * <p>열람 권한은 ACCEPTED일 때만 생긴다. AccessPolicy가 ACCEPTED만
+	 * 인정하므로 수락 후 별도 처리가 필요 없다.
+	 */
+	public void respond(PermissionStatus status) {
+		this.status = status;
+		this.respondedAt = LocalDateTime.now();
+	}
 }
