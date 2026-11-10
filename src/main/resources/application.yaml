@@ -23,6 +23,10 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # 마이그레이션은 DDL 권한이 있는 계정으로 한다 (DB 설계서 9장: 앱 계정은 DML만).
+    # FLYWAY_USER가 없으면(로컬) 앱 계정을 쓴다. url은 비워 두면 datasource와 같은 DB를 쓴다
+    user: ${FLYWAY_USER:${spring.datasource.username}}
+    password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
   servlet.multipart:
     max-file-size: 20MB
     max-request-size: 220MB
