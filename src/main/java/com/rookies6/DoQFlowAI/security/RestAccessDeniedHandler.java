@@ -9,6 +9,13 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerExceptionResolver;
+import com.rookies6.DoQFlowAI.entity.AppUser;
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
+import com.rookies6.DoQFlowAI.repository.AppUserRepository;
+import com.rookies6.DoQFlowAI.service.AuditService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * 인증은 됐지만 접근이 거부된 경우 403을 만든다. /internal/** 외부 접근이 여기로 온다.
@@ -22,6 +29,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 public class RestAccessDeniedHandler implements AccessDeniedHandler {
 
 	private final HandlerExceptionResolver resolver;
+	private final AuditService audit;
+	private final AppUserRepository users;
 
 	/**
 	 * 생성자를 직접 쓴다. Lombok의 @RequiredArgsConstructor는 lombok.config에
@@ -29,16 +38,37 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
 	 * 복사하지 않는다. 그러면 HandlerExceptionResolver 빈이 여러 개라 주입이 깨진다.
 	 */
 	public RestAccessDeniedHandler(
-			@Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver) {
+			@Qualifier("handlerExceptionResolver") HandlerExceptionResolver resolver,
+			AuditService audit,
+			AppUserRepository users) {
 		this.resolver = resolver;
+		this.audit = audit;
+		this.users = users;
 	}
 
 	@Override
 	public void handle(HttpServletRequest request,
-			HttpServletResponse response,
-			AccessDeniedException accessDeniedException) {
+					   HttpServletResponse response,
+					   AccessDeniedException accessDeniedException) {
+
+		audit.log(AuditEventType.ACCESS_DENIED, AuditResult.FAILURE,
+				currentUserId(), null, null,
+				request.getMethod() + " " + request.getRequestURI());
 
 		resolver.resolveException(request, response, null,
 				new ForbiddenException(ErrorCode.FORBIDDEN.name()));
+	}
+
+	/**
+	 * JwtAuthFilter가 principal에 publicId를 넣는다(CurrentUserResolver와 같은 약속).
+	 * 감사 로그에는 내부 PK가 필요하므로 한 번 조회한다. 403은 드물게 나므로
+	 * 조회 비용은 문제되지 않는다. 알 수 없으면 null을 남긴다.
+	 */
+	private Long currentUserId() {
+		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+		if (auth == null || !auth.isAuthenticated() || auth.getName() == null) {
+			return null;
+		}
+		return users.findByPublicId(auth.getName()).map(AppUser::getId).orElse(null);
 	}
 }
