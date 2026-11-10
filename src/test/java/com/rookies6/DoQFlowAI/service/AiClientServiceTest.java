@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.http.HttpMethod;
@@ -66,7 +67,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void extract는_내부키와_함께_요청하고_본문을_받는다() {
+	@DisplayName("extract는 내부키와 함께 요청하고 본문을 받는다")
+	void extractSendsInternalKeyAndReturnsText() {
 		server.expect(requestTo(BASE_URL + "/internal/extract"))
 				.andExpect(method(HttpMethod.POST))
 				.andExpect(header(RestClientConfig.INTERNAL_KEY_HEADER, KEY))
@@ -85,7 +87,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void history는_구간별_변경_블록_텍스트를_보내고_요약을_받는다() {
+	@DisplayName("history는 구간별 변경 블록 텍스트를 보내고 요약을 받는다")
+	void historySendsBlocksPerSegmentAndReturnsSummaries() {
 		historyServer.expect(requestTo(BASE_URL + "/internal/history"))
 				.andExpect(method(HttpMethod.POST))
 				.andExpect(header(RestClientConfig.INTERNAL_KEY_HEADER, KEY))
@@ -115,7 +118,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void history_응답에_실패_구간이_섞여도_그대로_받는다() {
+	@DisplayName("history 응답에 실패 구간이 섞여도 그대로 받는다")
+	void historyAcceptsPartiallyFailedSegments() {
 		historyServer.expect(requestTo(BASE_URL + "/internal/history"))
 				.andRespond(withSuccess("""
 						{"segments": [
@@ -129,7 +133,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void index는_색인_결과를_받는다() {
+	@DisplayName("index는 색인 결과를 받는다")
+	void indexReturnsResult() {
 		server.expect(requestTo(BASE_URL + "/internal/index"))
 				.andExpect(method(HttpMethod.POST))
 				.andExpect(content().json("""
@@ -146,7 +151,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void deleteIndex는_DELETE에_본문을_담아_보낸다() {
+	@DisplayName("deleteIndex는 DELETE에 본문을 담아 보낸다")
+	void deleteIndexSendsBodyWithDelete() {
 		server.expect(requestTo(BASE_URL + "/internal/index"))
 				.andExpect(method(HttpMethod.DELETE))
 				.andExpect(content().json("""
@@ -163,7 +169,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void traceId가_있으면_X_Trace_Id로_넘긴다() {
+	@DisplayName("traceId가 있으면 X-Trace-Id로 넘긴다")
+	void forwardsTraceIdHeader() {
 		MDC.put(TraceIdFilter.TRACE_ID, "3f2a9c1e-trace");
 		server.expect(requestTo(BASE_URL + "/internal/index"))
 				.andExpect(header(RestClientConfig.TRACE_ID_HEADER, "3f2a9c1e-trace"))
@@ -184,7 +191,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void traceId가_없으면_X_Trace_Id를_보내지_않는다() {
+	@DisplayName("traceId가 없으면 X-Trace-Id를 보내지 않는다")
+	void omitsTraceIdHeaderWhenAbsent() {
 		server.expect(requestTo(BASE_URL + "/internal/index"))
 				.andExpect(headerDoesNotExist(RestClientConfig.TRACE_ID_HEADER))
 				.andRespond(withSuccess("""
@@ -197,7 +205,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void AI_Module_5xx는_AiModuleException() {
+	@DisplayName("AI Module 5xx는 AiModuleException")
+	void serverErrorBecomesAiModuleException() {
 		server.expect(requestTo(BASE_URL + "/internal/extract")).andRespond(withServerError());
 
 		assertThatThrownBy(() -> aiClient.extract(31L, "7/3/5f1c.pdf", "application/pdf"))
@@ -205,7 +214,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void 내부키_불일치_401도_AiModuleException() {
+	@DisplayName("내부키 불일치 401도 AiModuleException")
+	void unauthorizedBecomesAiModuleException() {
 		server.expect(requestTo(BASE_URL + "/internal/index")).andRespond(withUnauthorizedRequest());
 
 		assertThatThrownBy(() -> aiClient.index(7L, 33L, 3))
@@ -213,7 +223,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void history_타임아웃도_AiModuleException() {
+	@DisplayName("history 타임아웃도 AiModuleException")
+	void historyTimeoutBecomesAiModuleException() {
 		historyServer.expect(requestTo(BASE_URL + "/internal/history"))
 				.andRespond(withException(new SocketTimeoutException("read timed out")));
 
@@ -222,7 +233,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void 응답_본문이_없으면_AiModuleException() {
+	@DisplayName("응답 본문이 없으면 AiModuleException")
+	void emptyBodyBecomesAiModuleException() {
 		server.expect(requestTo(BASE_URL + "/internal/index")).andRespond(withSuccess());
 
 		assertThatThrownBy(() -> aiClient.index(7L, 33L, 3))
@@ -230,7 +242,8 @@ class AiClientServiceTest {
 	}
 
 	@Test
-	void history_읽기_제한을_설정하지_않으면_기본_읽기_제한과_같다() {
+	@DisplayName("history 읽기 제한을 설정하지 않으면 기본 읽기 제한과 같다")
+	void historyReadTimeoutDefaultsToReadTimeout() {
 		AiClientProperties properties =
 				new AiClientProperties(BASE_URL, KEY, Duration.ofSeconds(3), Duration.ofSeconds(60), null);
 

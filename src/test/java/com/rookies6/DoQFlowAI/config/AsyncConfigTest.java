@@ -3,6 +3,7 @@ package com.rookies6.DoQFlowAI.config;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -23,7 +24,8 @@ class AsyncConfigTest {
 			.withUserConfiguration(AsyncConfig.class);
 
 	@Test
-	void force_모드면_전용_풀과_기본_executor가_함께_있다() {
+	@DisplayName("force 모드면 전용 풀과 기본 executor가 함께 있다")
+	void forceModeKeepsBothUploadPoolAndDefaultExecutor() {
 		runner.withPropertyValues("spring.task.execution.mode=force").run(context -> {
 			assertThat(context).hasBean(AsyncConfig.UPLOAD_EXECUTOR);
 			assertThat(context).hasBean("applicationTaskExecutor");
@@ -37,7 +39,8 @@ class AsyncConfigTest {
 	}
 
 	@Test
-	void 후처리_스레드에_요청의_traceId가_넘어가고_끝나면_지워진다() throws Exception {
+	@DisplayName("후처리 스레드에 요청의 traceId가 넘어가고 끝나면 지워진다")
+	void propagatesTraceIdToWorkerAndClearsAfterwards() throws Exception {
 		ThreadPoolTaskExecutor executor = new AsyncConfig().uploadExecutor();
 		executor.initialize();
 		try {
@@ -56,7 +59,8 @@ class AsyncConfigTest {
 	}
 
 	@Test
-	void force_설정이_없으면_기본_executor가_사라진다() {
+	@DisplayName("force 설정이 없으면 기본 executor가 사라진다")
+	void withoutForceModeDefaultExecutorBacksOff() {
 		// application.yaml의 spring.task.execution.mode: force를 지우면 안 되는 이유
 		runner.run(context -> assertThat(context).doesNotHaveBean("applicationTaskExecutor"));
 	}

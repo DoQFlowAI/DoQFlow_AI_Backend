@@ -6,6 +6,7 @@ import com.rookies6.DoQFlowAI.entity.AppUser;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import com.rookies6.DoQFlowAI.service.FileKind;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -33,7 +34,8 @@ class VersionContentResponseTest {
 	}
 
 	@Test
-	void 텍스트_계열은_kind_TEXT로_원문을_그대로_내린다() {
+	@DisplayName("텍스트 계열은 kind = TEXT로 원문을 그대로 내린다")
+	void textKindReturnsContentAsIs() {
 		DocumentVersion v = version("운영지침_v3.md", "text/markdown");
 		v.completeExtraction("1. 목적\n이 지침은 ...");
 
@@ -47,7 +49,8 @@ class VersionContentResponseTest {
 	}
 
 	@Test
-	void 문서_계열은_kind_DOC() {
+	@DisplayName("문서 계열은 kind = DOC")
+	void documentKindIsDoc() {
 		DocumentVersion pdf = version("v3.pdf", "application/pdf");
 		pdf.completeExtraction("첫 문장입니다.");
 		DocumentVersion docx = version("v3.docx", DOCX_MIME);
@@ -58,7 +61,8 @@ class VersionContentResponseTest {
 	}
 
 	@Test
-	void 추출_전이나_추출_실패면_content는_null() {
+	@DisplayName("추출 전이나 추출 실패면 content는 null")
+	void contentIsNullBeforeOrAfterFailedExtraction() {
 		DocumentVersion processing = version("v3.pdf", "application/pdf");
 		DocumentVersion failed = version("v4.pdf", "application/pdf");
 		failed.failExtraction();
@@ -69,7 +73,8 @@ class VersionContentResponseTest {
 	}
 
 	@Test
-	void 상한을_넘으면_잘라서_truncated_true() {
+	@DisplayName("상한을 넘으면 잘라서 truncated = true")
+	void truncatesOverLimitAndFlagsTruncated() {
 		DocumentVersion v = version("big.log", "text/plain");
 		v.completeExtraction("가".repeat(10));
 
@@ -80,7 +85,8 @@ class VersionContentResponseTest {
 	}
 
 	@Test
-	void JSON에_저장_파일명과_경로가_없다() {
+	@DisplayName("JSON에 저장 파일명과 경로가 없다")
+	void jsonHasNoStoredFilenameOrPath() {
 		DocumentVersion v = version("운영지침_v3.md", "text/markdown");
 		v.completeExtraction("본문");
 

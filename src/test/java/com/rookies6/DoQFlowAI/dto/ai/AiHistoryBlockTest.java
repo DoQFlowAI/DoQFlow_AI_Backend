@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.rookies6.DoQFlowAI.service.DiffBlock;
 import com.rookies6.DoQFlowAI.service.DiffService;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -14,7 +15,8 @@ class AiHistoryBlockTest {
 	private final DiffService diffService = new DiffService(JsonMapper.builder().build());
 
 	@Test
-	void DiffBlock의_줄_위치로_변경_전후_줄을_잘라낸다() {
+	@DisplayName("DiffBlock의 줄 위치로 변경 전후 줄을 잘라낸다")
+	void slicesBeforeAndAfterLinesByDiffBlockPosition() {
 		String from = "1. 목적\n결재는 팀장이 승인한다.\n끝";
 		String to = "1. 목적\n결재는 실장이 승인한다.\n승인 기한은 3일이다.\n끝";
 
@@ -31,7 +33,8 @@ class AiHistoryBlockTest {
 	}
 
 	@Test
-	void INSERT는_before가_DELETE는_after가_빈_배열() {
+	@DisplayName("INSERT는 before가 DELETE는 after가 빈 배열")
+	void insertHasEmptyBeforeAndDeleteHasEmptyAfter() {
 		List<String> lines = List.of("a", "b");
 
 		AiHistory.Block insert = AiHistory.Block.of(new DiffBlock("INSERT", 1, 0, 1, 1), List.of("a"), lines);

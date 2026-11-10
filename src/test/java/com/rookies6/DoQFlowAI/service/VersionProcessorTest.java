@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
@@ -95,7 +96,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 문서_계열은_추출하고_구간_요약_후_마지막_버전만_색인해_READY() {
+	@DisplayName("문서 계열은 추출하고 구간 요약 후 마지막 버전만 색인해 READY")
+	void documentKindExtractsSummarizesIndexesLatestAndReady() {
 		DocumentVersion v1 = version(11, 1, PDF);
 		DocumentVersion v2 = version(12, 2, PDF);
 		uploaded(v1, v2);
@@ -120,7 +122,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void history에는_구간_하나씩_변경_블록_텍스트만_보낸다() {
+	@DisplayName("history에는 구간 하나씩 변경 블록 텍스트만 보낸다")
+	void sendsOneSegmentOfBlockTextPerHistoryCall() {
 		DocumentVersion v1 = version(11, 1, "text/plain");
 		v1.completeExtraction("a\nb\nc");
 		DocumentVersion v2 = version(12, 2, "text/plain");
@@ -145,7 +148,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 변경이_없는_구간은_SKIPPED이고_LLM을_부르지_않는다() {
+	@DisplayName("변경이 없는 구간은 SKIPPED이고 LLM을 부르지 않는다")
+	void unchangedSegmentIsSkippedWithoutLlm() {
 		DocumentVersion v1 = version(11, 1, "text/plain");
 		v1.completeExtraction("same");
 		DocumentVersion v2 = version(12, 2, "text/plain");
@@ -160,7 +164,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 추가_업로드는_직전_버전과_새_첫_버전_사이_구간도_만든다() {
+	@DisplayName("추가 업로드는 직전 버전과 새 첫 버전 사이 구간도 만든다")
+	void additionalUploadBuildsSegmentFromPreviousVersion() {
 		DocumentVersion v3 = version(13, 3, "text/plain");
 		v3.completeExtraction("old");
 		DocumentVersion v4 = version(14, 4, "text/plain");
@@ -177,7 +182,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 추출에_실패한_버전만_FAILED이고_그_버전이_낀_구간은_만들지_않는다() {
+	@DisplayName("추출에 실패한 버전만 FAILED이고 그 버전이 낀 구간은 만들지 않는다")
+	void failedExtractionSkipsItsSegments() {
 		DocumentVersion v1 = version(11, 1, PDF);
 		DocumentVersion v2 = version(12, 2, PDF);
 		DocumentVersion v3 = version(13, 3, PDF);
@@ -197,7 +203,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 추출_본문이_비어_있으면_FAILED() {
+	@DisplayName("추출 본문이 비어 있으면 FAILED")
+	void blankExtractionIsFailed() {
 		DocumentVersion v1 = version(11, 1, PDF);
 		uploaded(v1);
 		extractReturns(11, "  ");
@@ -210,7 +217,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 요약_호출이_실패해도_그_구간만_FAILED이고_계속_진행한다() {
+	@DisplayName("요약 호출이 실패해도 그 구간만 FAILED이고 계속 진행한다")
+	void summaryFailureMarksOnlyThatSegment() {
 		DocumentVersion v1 = version(11, 1, "text/plain");
 		v1.completeExtraction("a");
 		DocumentVersion v2 = version(12, 2, "text/plain");
@@ -227,7 +235,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void AI가_구간을_FAILED로_돌려주면_FAILED로_저장한다() {
+	@DisplayName("AI가 구간을 FAILED로 돌려주면 FAILED로 저장한다")
+	void storesFailedSegmentFromAi() {
 		DocumentVersion v1 = version(11, 1, "text/plain");
 		v1.completeExtraction("a");
 		DocumentVersion v2 = version(12, 2, "text/plain");
@@ -241,7 +250,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 색인_실패_시_문서_계열은_추출을_한_번_다시_하고_색인한다() {
+	@DisplayName("색인 실패 시 문서 계열은 추출을 한 번 다시 하고 색인한다")
+	void indexFailureReExtractsOnceForDocumentKind() {
 		DocumentVersion v1 = version(11, 1, PDF);
 		uploaded(v1);
 		extractReturns(11, "본문");
@@ -257,7 +267,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 다시_해도_색인에_실패하면_문서_FAILED이고_이전_벡터는_지우지_않는다() {
+	@DisplayName("다시 해도 색인에 실패하면 문서 FAILED이고 이전 벡터는 지우지 않는다")
+	void repeatedIndexFailureMarksFailedAndKeepsVectors() {
 		DocumentVersion v1 = version(11, 1, PDF);
 		uploaded(v1);
 		extractReturns(11, "본문");
@@ -270,7 +281,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 이전_벡터_삭제가_실패해도_문서는_READY() {
+	@DisplayName("이전 벡터 삭제가 실패해도 문서는 READY")
+	void vectorCleanupFailureStillReady() {
 		DocumentVersion v1 = version(11, 1, "text/plain");
 		v1.completeExtraction("a");
 		uploaded(v1);
@@ -282,7 +294,8 @@ class VersionProcessorTest {
 	}
 
 	@Test
-	void 예상하지_못한_오류가_나도_PROCESSING에_멈추지_않고_FAILED() {
+	@DisplayName("예상하지 못한 오류가 나도 PROCESSING에 멈추지 않고 FAILED")
+	void unexpectedErrorEndsFailedNotProcessing() {
 		when(versions.findAllById(anyList())).thenThrow(new IllegalStateException("db down"));
 
 		processor.process(DOCUMENT_ID, null, List.of(11L));

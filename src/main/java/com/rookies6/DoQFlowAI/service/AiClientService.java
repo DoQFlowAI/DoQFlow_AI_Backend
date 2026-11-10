@@ -1,11 +1,18 @@
 package com.rookies6.DoQFlowAI.service;
 
 import com.rookies6.DoQFlowAI.config.RestClientConfig;
+import com.rookies6.DoQFlowAI.dto.ai.AiChat;
 import com.rookies6.DoQFlowAI.dto.ai.AiDeleteIndex;
 import com.rookies6.DoQFlowAI.dto.ai.AiExtract;
 import com.rookies6.DoQFlowAI.dto.ai.AiHistory;
 import com.rookies6.DoQFlowAI.dto.ai.AiIndex;
 import com.rookies6.DoQFlowAI.exception.AiModuleException;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
@@ -15,12 +22,22 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
 
 /// AI Module(DoQScale_LLM2) 내부 API 호출
 @Slf4j
 @Service
 public class AiClientService {
+
+	// SSE data 한 줄을 읽는 용도. 모르는 필드가 와도 무시한다
+	private static final JsonMapper SSE_JSON = JsonMapper.builder()
+			.disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+			.build();
+	private static final String SSE_DATA = "data:";
+	private static final String SSE_DONE = "[DONE]";
 
 	private final RestClient aiRestClient;
 	// /internal/history 전용 (읽기 180초)
@@ -78,6 +95,90 @@ public class AiClientService {
 				.body(request)
 				.retrieve()
 				.body(AiDeleteIndex.Response.class));
+	}
+
+	/**
+	 * 질의응답 (AI 모듈 연동 명세서 4.4). 읽기 60초 클라이언트를 쓴다.
+	 *
+	 * 응답은 SSE지만 스트림을 끝까지 받아 한 번에 돌려준다.
+	 * Backend는 근거 재확인을 통과하기 전에는 토큰을 Frontend로 보낼 수 없어서(Backend 명세서 6) 어차피 모아야 한다.
+	 * 다음은 모두 AiModuleException(502)이다.
+	 *   4xx·5xx 응답, 연결 실패·타임아웃, error 이벤트,
+	 *   [DONE] 없이 끊긴 스트림, 근거 이벤트 없이 끝난 답변, 읽을 수 없는 data
+	 *
+	 * @param question 질문
+	 * @param scope    검색 범위. 빈 목록이면 호출하지 말아야 하므로 여기서 막는다
+	 * @param topK     근거 조각 최대 개수
+	 */
+	public AiChat.Result chat(String question, List<Long> scope, int topK) {
+		if (scope == null || scope.isEmpty()) {
+			throw new IllegalArgumentException("scope must not be empty; do not call the AI Module");
+		}
+		AiChat.Request request = new AiChat.Request(question, scope, topK);
+		return call("chat", () -> aiRestClient.post()
+				.uri("/internal/chat")
+				.contentType(MediaType.APPLICATION_JSON)
+				.accept(MediaType.TEXT_EVENT_STREAM)
+				.body(request)
+				.exchange((req, res) -> {
+					if (res.getStatusCode().isError()) {
+						throw new AiModuleException("AI Module chat responded " + res.getStatusCode().value());
+					}
+					return readChatStream(res.getBody());
+				}));
+	}
+
+	/**
+	 * /internal/chat SSE 본문을 끝까지 읽는다
+	 * data: 줄만 보고, 빈 줄·주석(:)·event: 줄은 건너뛴다. [DONE]이 오면 끝이다.
+	 */
+	static AiChat.Result readChatStream(InputStream body) throws IOException {
+		List<String> tokens = new ArrayList<>();
+		List<Long> sourceVersionIds = null;
+		List<AiChat.Chunk> chunks = List.of();
+		boolean noAnswer = false;
+
+		BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8));
+		String line;
+		while ((line = reader.readLine()) != null) {
+			if (!line.startsWith(SSE_DATA)) {
+				continue;
+			}
+			String data = line.substring(SSE_DATA.length()).strip();
+			if (SSE_DONE.equals(data)) {
+				if (noAnswer) {
+					return AiChat.Result.noAnswerResult();
+				}
+				if (sourceVersionIds == null) {
+					throw new AiModuleException("AI Module chat ended without a sources event");
+				}
+				return new AiChat.Result(List.copyOf(tokens), sourceVersionIds, chunks, false);
+			}
+			AiChat.Event event = parseEvent(data);
+			if (event.error() != null) {
+				throw new AiModuleException("AI Module chat sent an error event");
+			}
+			if (Boolean.TRUE.equals(event.noAnswer())) {
+				noAnswer = true;
+			}
+			if (event.token() != null) {
+				tokens.add(event.token());
+			}
+			if (event.sourceVersionIds() != null) {
+				sourceVersionIds = List.copyOf(event.sourceVersionIds());
+				chunks = event.chunks() == null ? List.of() : List.copyOf(event.chunks());
+			}
+		}
+		throw new AiModuleException("AI Module chat stream ended without [DONE]");
+	}
+
+	private static AiChat.Event parseEvent(String data) {
+		try {
+			return SSE_JSON.readValue(data, AiChat.Event.class);
+		} catch (JacksonException e) {
+			// 원문에 답변·문서 내용이 들어 있을 수 있어 로그에 남기지 않는다
+			throw new AiModuleException("AI Module chat sent an unreadable event", e);
+		}
 	}
 
 	/// JSON 본문 전송

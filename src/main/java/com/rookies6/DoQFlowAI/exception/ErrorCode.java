@@ -10,7 +10,7 @@ package com.rookies6.DoQFlowAI.exception;
  */
 public enum ErrorCode {
 
-	VALIDATION_ERROR(400, "입력값을 확인해 주세요."),
+	VALIDATION_ERROR(400, "입력값이 올바르지 않습니다."),
 	UNAUTHORIZED(401, "인증이 필요합니다."),
 	INVALID_CREDENTIALS(401, "이메일 또는 비밀번호가 올바르지 않습니다."),
 	FORBIDDEN(403, "권한이 없습니다."),
@@ -18,10 +18,10 @@ public enum ErrorCode {
 	USER_NOT_FOUND(404, "사용자를 찾을 수 없습니다."),
 	NOT_FOUND(404, "요청한 경로를 찾을 수 없습니다."),
 	EMAIL_DUPLICATED(409, "이미 가입된 이메일입니다."),
-	FILE_TOO_LARGE(413, "파일 크기가 허용 범위를 넘습니다."),
-	ACCOUNT_LOCKED(423, "로그인 시도가 많아 계정이 잠겼습니다. 잠시 후 다시 시도해 주세요."),
+	FILE_TOO_LARGE(413, "파일 크기가 20MB를 초과합니다."),
+	ACCOUNT_LOCKED(423, "계정이 잠겼습니다. 잠시 후 다시 시도하세요."),
 	RATE_LIMIT_EXCEEDED(429, "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."),
-	INTERNAL_ERROR(500, "요청을 처리할 수 없습니다."),
+	INTERNAL_ERROR(500, "일시적인 오류가 발생했습니다."),
 	AI_UNAVAILABLE(502, "일시적으로 답변할 수 없습니다.");
 
 	private final int status;

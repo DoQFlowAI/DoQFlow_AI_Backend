@@ -14,6 +14,7 @@ import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -48,10 +49,11 @@ class VersionServiceTest {
 	}
 
 	@Test
-	void 버전의_본문을_돌려준다() {
+	@DisplayName("버전의 본문을 돌려준다")
+	void returnsVersionContent() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 3)).thenReturn(Optional.of(textVersion(3, "1. 목적")));
 
-		VersionContentResponse response = new VersionService(versions, null, null, null, 1_048_576).getContent(document, 3);
+		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, 1_048_576).getContent(document, 3);
 
 		assertThat(response.versionNo()).isEqualTo(3);
 		assertThat(response.content()).isEqualTo("1. 목적");
@@ -59,20 +61,22 @@ class VersionServiceTest {
 	}
 
 	@Test
-	void 설정한_상한으로_자른다() {
+	@DisplayName("설정한 상한으로 자른다")
+	void truncatesToConfiguredLimit() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 1)).thenReturn(Optional.of(textVersion(1, "가".repeat(10))));
 
-		VersionContentResponse response = new VersionService(versions, null, null, null, 10).getContent(document, 1);
+		VersionContentResponse response = new VersionService(null, versions, null, null, null, null, 10).getContent(document, 1);
 
 		assertThat(response.content()).isEqualTo("가가가");
 		assertThat(response.truncated()).isTrue();
 	}
 
 	@Test
-	void 없는_버전이면_404_DOCUMENT_NOT_FOUND() {
+	@DisplayName("없는 버전이면 404 DOCUMENT_NOT_FOUND")
+	void missingVersionIs404() {
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 9)).thenReturn(Optional.empty());
 
-		assertThatThrownBy(() -> new VersionService(versions, null, null, null, 1_048_576).getContent(document, 9))
+		assertThatThrownBy(() -> new VersionService(null, versions, null, null, null, null, 1_048_576).getContent(document, 9))
 				.isInstanceOf(VersionNotFoundException.class)
 				.extracting(e -> ((VersionNotFoundException) e).getErrorCode())
 				.isEqualTo(ErrorCode.DOCUMENT_NOT_FOUND);

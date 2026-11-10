@@ -19,7 +19,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 /**
- * 버전 업로드 후처리 < API 18 > (Backend 개발 명세서 7 후처리, AI 모듈 연동 명세서 5.1)
+ * 버전 업로드 후처리 < API 18 >
  *
  * 업로드 트랜잭션이 커밋된 뒤 전용 스레드풀(uploadExecutor)에서 돈다. 트랜잭션 밖에서 단계마다 저장한다.
  * VersionService와 다른 bean으로 둔 이유: 같은 클래스 안에서 부르면 @Async가 적용되지 않는다.
@@ -31,7 +31,7 @@ import org.springframework.stereotype.Component;
  *   4. 색인   — 마지막 버전만 /internal/index, 성공하면 DELETE /internal/index(keep=마지막)로 이전 벡터 정리
  *   5. 문서 상태 READY (색인 실패·마지막 버전 추출 실패면 FAILED)
  *
- * 실패 처리 (Backend 개발 명세서 6)
+ * 실패 처리
  *   추출 실패 → 그 버전만 FAILED, 나머지 계속
  *   요약 실패 → 그 구간만 summary_status FAILED, 계속 (재시도는 AI Module이 한다)
  *   색인 실패 → 문서 FAILED (검색 제외)
@@ -67,6 +67,39 @@ public class VersionProcessor {
 	/** 후처리를 시작하지 못했을 때(스레드풀 대기열 초과 등) 문서를 FAILED로 둔다 */
 	public void markFailed(Long documentId) {
 		markDocument(documentId, DocumentStatus.FAILED);
+	}
+
+	/**
+	 * 버전 삭제 뒤 정리 < API 21 >
+	 *
+	 * 끊어진 구간 재생성 — 지운 버전의 앞(from)과 뒤(to)를 새 인접 구간으로 보고 diff·요약을 다시 만든다.
+	 * 재색인 — 최신 버전을 지웠으면 새 최신 버전(직전 버전)을 색인하고 그 외 벡터를 지운 뒤 문서를 READY로 둔다.
+	 *
+	 * @param fromVersionId   새 구간의 앞 버전 (지운 버전이 맨 앞이었거나 맨 뒤였으면 null)
+	 * @param toVersionId     새 구간의 뒤 버전 (지운 버전이 맨 뒤였으면 null)
+	 * @param reindexVersionId 다시 색인할 버전 (최신 버전을 지웠을 때만, 아니면 null)
+	 */
+	@Async(AsyncConfig.UPLOAD_EXECUTOR)
+	public void rebuildAfterDelete(Long documentId, Long fromVersionId, Long toVersionId, Long reindexVersionId) {
+		try {
+			if (fromVersionId != null && toVersionId != null) {
+				DocumentVersion from = versions.findById(fromVersionId).orElse(null);
+				DocumentVersion to = versions.findById(toVersionId).orElse(null);
+				if (from != null && to != null) {
+					summarizeSegment(documentId, from, to);
+				}
+			}
+			if (reindexVersionId != null) {
+				DocumentVersion latest = versions.findById(reindexVersionId).orElse(null);
+				boolean indexed = latest != null && index(documentId, latest);
+				markDocument(documentId, indexed ? DocumentStatus.READY : DocumentStatus.FAILED);
+			}
+		} catch (RuntimeException e) {
+			log.error("rebuild after version delete failed: documentId={}", documentId, e);
+			if (reindexVersionId != null) {
+				markDocument(documentId, DocumentStatus.FAILED); // PROCESSING에 멈춰 있지 않게
+			}
+		}
 	}
 
 	void run(Long documentId, Long previousVersionId, List<Long> newVersionIds) {
@@ -114,7 +147,7 @@ public class VersionProcessor {
 	}
 
 	/**
-	 * 버전 n의 행에 n-1 → n 구간의 변경점을 저장한다 (DB 설계서 4.3).
+	 * 버전 n의 행에 n-1 → n 구간의 변경점을 저장한다
 	 * 둘 중 하나라도 본문이 없으면(FAILED) 구간을 만들지 않는다. change_count가 비어 변천사에서 빠진다.
 	 */
 	private void summarizeSegment(Long documentId, DocumentVersion from, DocumentVersion to) {
@@ -136,7 +169,7 @@ public class VersionProcessor {
 			List<DiffBlock> blocks) {
 		List<String> fromLines = DiffService.lines(from.getContentText());
 		List<String> toLines = DiffService.lines(to.getContentText());
-		AiHistory.RequestSegment segment = new AiHistory.RequestSegment(
+		AiHistory.RequestSegment segment = AiHistory.RequestSegment.of(
 				from.getVersionNo(),
 				to.getVersionNo(),
 				blocks.stream().map(block -> AiHistory.Block.of(block, fromLines, toLines)).toList());
@@ -165,7 +198,7 @@ public class VersionProcessor {
 	 * 문서 계열은 추출부터 한 번 다시 한다 (AI 모듈 연동 명세서 4.2).
 	 *
 	 * TODO 텍스트 계열은 추출을 거치지 않아 AI Module에 색인용 임시 파일이 없다.
-	 *      /internal/index 요청에 filePath·mimeType을 넣는 방안을 정세진 님과 협의 중이다.
+	 *      /internal/index 요청에 filePath·mimeType을 넣는 방안을 AI 모듈 담당과 협의 중이다.
 	 *
 	 * @return 색인 성공 여부
 	 */

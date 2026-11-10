@@ -19,6 +19,7 @@ import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
@@ -37,7 +38,7 @@ class VersionHistoryServiceTest {
 	void setUp() {
 		versions = mock(DocumentVersionRepository.class);
 		diffService = new DiffService(JsonMapper.builder().build());
-		service = new VersionHistoryService(versions, diffService);
+		service = new VersionHistoryService(versions, diffService, null);
 
 		AppUser lead = AppUser.builder().email("lead@example.com").passwordHash("x").name("팀장").rankLevel(2).build();
 		document = Document.builder().name("휴가 규정").uploadedBy(lead).build();
@@ -68,7 +69,8 @@ class VersionHistoryServiceTest {
 	// ---------- API 22 변천사 ----------
 
 	@Test
-	void 변천사는_두번째_버전부터_구간을_만들고_처리중인_버전은_뺀다() {
+	@DisplayName("변천사는 두번째 버전부터 구간을 만들고 처리중인 버전은 뺀다")
+	void historyStartsAtSecondVersionAndSkipsProcessing() {
 		DocumentVersion v1 = version(1, "a");
 		DocumentVersion v2 = version(2, "b");
 		v2.updateDiff("[]", 3);
@@ -89,7 +91,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 버전이_삭제되어_번호가_비어도_실제_직전_버전과_구간을_만든다() {
+	@DisplayName("버전이 삭제되어 번호가 비어도 실제 직전 버전과 구간을 만든다")
+	void historyPairsWithActualPreviousAfterGap() {
 		DocumentVersion v1 = version(1, "a");
 		DocumentVersion v3 = version(3, "c");
 		v3.updateDiff("[]", 0);
@@ -105,7 +108,8 @@ class VersionHistoryServiceTest {
 	// ---------- API 24 두 버전 비교 ----------
 
 	@Test
-	void 인접_구간은_저장된_diff를_그대로_쓴다() {
+	@DisplayName("인접 구간은 저장된 diff를 그대로 쓴다")
+	void adjacentCompareUsesStoredDiff() {
 		DocumentVersion v1 = version(1, "a\nb");
 		DocumentVersion v2 = version(2, "a\nc");
 		// 저장값을 재사용하는지 확인하려고, 실제 계산 결과와 다른 블록을 저장해 둔다.
@@ -123,7 +127,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 비인접_구간은_요청_시점에_계산한다() {
+	@DisplayName("비인접 구간은 요청 시점에 계산한다")
+	void nonAdjacentCompareComputesOnRequest() {
 		DocumentVersion v1 = version(1, "a\nb");
 		DocumentVersion v3 = version(3, "a\nb\nc");
 		v3.updateDiff("[]", 0);
@@ -138,7 +143,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void from이_to보다_커도_요청한_방향으로_계산한다() {
+	@DisplayName("from이 to보다 커도 요청한 방향으로 계산한다")
+	void compareKeepsRequestedDirection() {
 		DocumentVersion v1 = version(1, "a");
 		DocumentVersion v2 = version(2, "a\nb");
 		v2.updateDiff("[]", 0);
@@ -153,7 +159,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 아직_추출_중인_PROCESSING_버전과는_비교하지_않는다() {
+	@DisplayName("아직 추출 중인 PROCESSING 버전과는 비교하지 않는다")
+	void rejectsProcessingVersion() {
 		stubVersion(version(1, "a"));
 		stubVersion(version(2, null)); // 본문 추출 전
 
@@ -164,7 +171,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 추출에_실패한_FAILED_버전은_비교_대상에서_제외한다() {
+	@DisplayName("추출에 실패한 FAILED 버전은 비교 대상에서 제외한다")
+	void rejectsFailedVersion() {
 		DocumentVersion failed = version(2, null);
 		failed.failExtraction();
 		stubVersion(version(1, "a"));
@@ -175,7 +183,8 @@ class VersionHistoryServiceTest {
 	}
 
 	@Test
-	void 없는_버전이면_VersionNotFoundException() {
+	@DisplayName("없는 버전이면 VersionNotFoundException")
+	void missingVersionThrowsVersionNotFound() {
 		stubVersion(version(1, "a"));
 		when(versions.findByDocumentIdAndVersionNo(DOCUMENT_ID, 9)).thenReturn(Optional.empty());
 
