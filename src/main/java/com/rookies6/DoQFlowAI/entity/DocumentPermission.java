@@ -66,4 +66,19 @@ public class DocumentPermission {
 	protected void onCreate() {
 		grantedAt = LocalDateTime.now();
 	}
+
+	/**
+	 * 거절한 초대를 다시 PENDING으로 되돌린다 < API 5.7 >
+	 *
+	 * <p>(document_id, user_id) 유니크 제약 때문에 새 행을 만들 수 없다.
+	 * 한 번 거절한 사람도 다시 초대할 수 있어야 하므로 기존 행을 되살린다.
+	 * respondedAt을 비워 "아직 응답하지 않음" 상태로 돌린다.
+	 *
+	 * <p>grantedAt은 updatable = false라 최초 초대 시각이 유지된다.
+	 */
+	public void reopen(AppUser grantedBy) {
+		this.status = PermissionStatus.PENDING;
+		this.grantedBy = grantedBy;
+		this.respondedAt = null;
+	}
 }
