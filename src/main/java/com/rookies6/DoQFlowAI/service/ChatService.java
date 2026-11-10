@@ -15,11 +15,13 @@ import com.rookies6.DoQFlowAI.exception.ChatSessionNotFoundException;
 import com.rookies6.DoQFlowAI.exception.ErrorCode;
 import com.rookies6.DoQFlowAI.repository.ChatMessageRepository;
 import com.rookies6.DoQFlowAI.repository.ChatSessionRepository;
+import com.rookies6.DoQFlowAI.repository.DocumentPermissionRepository;
 import com.rookies6.DoQFlowAI.repository.MessageSourceRepository;
 import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -57,12 +59,13 @@ public class ChatService {
 	private final ChatHistoryWriter writer;
 	private final AiClientService aiClient;
 	private final AccessPolicy accessPolicy;
+	private final DocumentPermissionRepository permissions;
 	private final int maxQuestionLength;
 	private final int topK;
 
 	public ChatService(ChatSessionRepository sessions, ChatMessageRepository messages,
 			MessageSourceRepository sources, ChatHistoryWriter writer, AiClientService aiClient,
-			AccessPolicy accessPolicy,
+			AccessPolicy accessPolicy, DocumentPermissionRepository permissions,
 			@Value("${app.chat.max-question-length:1000}") int maxQuestionLength,
 			@Value("${app.chat.top-k:5}") int topK) {
 		this.sessions = sessions;
@@ -71,6 +74,7 @@ public class ChatService {
 		this.writer = writer;
 		this.aiClient = aiClient;
 		this.accessPolicy = accessPolicy;
+		this.permissions = permissions;
 		this.maxQuestionLength = maxQuestionLength;
 		this.topK = topK;
 	}
@@ -83,16 +87,36 @@ public class ChatService {
 	}
 
 	/**
+	 * 대화 기록 조회 < API 26 > - 컨트롤러가 부른다
+	 *
+	 * 읽기 판정은 AccessPolicy.readOrNotFound와 같다: 내가 등록한 문서이거나 초대를 수락(ACCEPTED)한 문서.
+	 * 문서 상태(PROCESSING·FAILED)는 보지 않는다. 읽을 수 있는 문서의 과거 답변이 재업로드 중에 가려지면 안 된다.
+	 * readOrNotFound를 문서마다 부르고 예외를 잡지 않는 이유: 이 트랜잭션 안에서 예외가 나면 rollback-only가 되어 조회 전체가 실패한다.
+	 * 초대 수락 문서는 한 번에 조회한다. 남의 대화면 조회 전에 404로 끝난다.
+	 */
+	@Transactional(readOnly = true)
+	public List<ChatMessageResponse> listMessages(AppUser me, Long sessionId) {
+		ChatSession session = ownSession(me, sessionId);
+		Long userId = me.getId();
+		Set<Long> invited = new HashSet<>(permissions.findAccessibleDocumentIds(userId));
+		return listMessages(session, document -> accessPolicy.isOwner(document, userId)
+				|| invited.contains(document.getId()));
+	}
+
+	/**
 	 * 대화 기록 조회 < API 26 >
 	 * 근거마다 지금 읽을 수 있는지 다시 판정한다. 근거가 하나라도 가림 대상이면 그 답변 전체를 가린다 (DB 설계서 4.6).
 	 *   근거 버전이 삭제됨(version NULL) → 가림 (fail-closed)
 	 *   그 버전의 문서를 읽을 수 없음(회수·거절) → 가림
 	 *
-	 * @param canRead 문서 읽기 권한 판정. AccessPolicy.canRead(me, doc)
+	 * @param canRead 문서 읽기 권한 판정
 	 */
 	@Transactional(readOnly = true)
 	public List<ChatMessageResponse> listMessages(AppUser me, Long sessionId, Predicate<Document> canRead) {
-		ChatSession session = ownSession(me, sessionId);
+		return listMessages(ownSession(me, sessionId), canRead);
+	}
+
+	private List<ChatMessageResponse> listMessages(ChatSession session, Predicate<Document> canRead) {
 		List<ChatMessage> history = messages.findBySessionIdOrderByCreatedAtAscIdAsc(session.getId());
 
 		List<Long> answerIds = history.stream()
