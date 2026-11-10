@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -80,7 +81,8 @@ class ChatHistoryWriterTest {
 	}
 
 	@Test
-	void 답변과_근거를_문서_이름과_버전_번호_스냅샷으로_저장한다() {
+	@DisplayName("답변과 근거를 문서 이름과 버전 번호 스냅샷으로 저장한다")
+	void savesAnswerAndSourcesWithSnapshot() {
 		when(versions.findAllById(List.of(33L))).thenReturn(List.of(version(33L, 7L, "출장 규정", 3)));
 		AiChat.Result result = new AiChat.Result(List.of("출장비는", " 14일 이내"), List.of(33L),
 				List.of(new AiChat.Chunk(33L, 7L, 3, 12, 5, "정산은 14일 이내"),
@@ -107,7 +109,8 @@ class ChatHistoryWriterTest {
 	}
 
 	@Test
-	void 근거_버전이_그사이_삭제됐으면_아무것도_저장하지_않는다() {
+	@DisplayName("근거 버전이 그사이 삭제됐으면 아무것도 저장하지 않는다")
+	void savesNothingWhenSourceVersionDeleted() {
 		when(versions.findAllById(List.of(33L))).thenReturn(List.of());
 		AiChat.Result result = new AiChat.Result(List.of("답"), List.of(33L),
 				List.of(new AiChat.Chunk(33L, 7L, 3, 1, 0, "조각")), false);
@@ -118,7 +121,8 @@ class ChatHistoryWriterTest {
 	}
 
 	@Test
-	void 근거_없음은_질문과_고정_문구만_저장한다() {
+	@DisplayName("근거 없음은 질문과 고정 문구만 저장한다")
+	void noAnswerSavesQuestionAndFixedMessageOnly() {
 		ChatAnswer answer = writer.saveNoAnswer(SESSION_ID, "질문", ChatService.NO_ANSWER_MESSAGE);
 
 		assertThat(answer.noAnswer()).isTrue();
@@ -128,7 +132,8 @@ class ChatHistoryWriterTest {
 	}
 
 	@Test
-	void 제목은_첫_질문으로만_채우고_50자에서_자른다() {
+	@DisplayName("제목은 첫 질문으로만 채우고 50자에서 자른다")
+	void titleComesFromFirstQuestionCutAt50() {
 		writer.saveNoAnswer(SESSION_ID, "  첫   질문\n입니다  ", ChatService.NO_ANSWER_MESSAGE);
 		writer.saveNoAnswer(SESSION_ID, "두 번째 질문", ChatService.NO_ANSWER_MESSAGE);
 		assertThat(session.getTitle()).isEqualTo("첫 질문 입니다");
@@ -137,7 +142,8 @@ class ChatHistoryWriterTest {
 	}
 
 	@Test
-	void 질문_처리_중_대화가_지워졌으면_404다() {
+	@DisplayName("질문 처리 중 대화가 지워졌으면 404다")
+	void sessionDeletedDuringQuestionIs404() {
 		when(sessions.findById(SESSION_ID)).thenReturn(Optional.empty());
 
 		assertThatThrownBy(() -> writer.saveNoAnswer(SESSION_ID, "질문", ChatService.NO_ANSWER_MESSAGE))

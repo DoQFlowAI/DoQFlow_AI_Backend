@@ -16,6 +16,7 @@ import com.rookies6.DoQFlowAI.exception.ErrorCode;
 import com.rookies6.DoQFlowAI.repository.ChatMessageRepository;
 import com.rookies6.DoQFlowAI.repository.ChatSessionRepository;
 import com.rookies6.DoQFlowAI.repository.MessageSourceRepository;
+import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -31,7 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 대화 생성·기록 조회·질의응답 < API 25, 26, 27 > (Backend 개발 명세서 6, API 설계서 6)
+ * 대화 생성·기록 조회·질의응답 < API 25, 26, 27 >
  *
  * 질의응답 순서
  *   1. 질문 검증 (1~1000자), 내 대화인지 확인
@@ -41,10 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
  *   5. 통과한 답변만 저장하고 돌려준다
  * 근거 없음 문구는 권한 없음·문서 없음·검색 실패·재확인 실패 모두 같다. 응답만으로 문서의 존재를 알 수 없어야 한다.
  *
- * TODO AccessPolicy 병합 후
- *   ask: scope = accessPolicy.accessibleVersionIds(me)
- *   listMessages: canRead = doc -> accessPolicy.canRead(me, doc)
- *   RateLimiter(질문 분당 20회 429), AuditService(CHAT_QUESTION 문서 ID만, SOURCE_CHECK_FAILED)
+ * scope는 AccessPolicy.accessibleVersionIds(me)로 구한다 (존재하고, 읽을 수 있고, READY인 문서의 최신 버전).
  */
 @Slf4j
 @Service
@@ -58,11 +56,13 @@ public class ChatService {
 	private final MessageSourceRepository sources;
 	private final ChatHistoryWriter writer;
 	private final AiClientService aiClient;
+	private final AccessPolicy accessPolicy;
 	private final int maxQuestionLength;
 	private final int topK;
 
 	public ChatService(ChatSessionRepository sessions, ChatMessageRepository messages,
 			MessageSourceRepository sources, ChatHistoryWriter writer, AiClientService aiClient,
+			AccessPolicy accessPolicy,
 			@Value("${app.chat.max-question-length:1000}") int maxQuestionLength,
 			@Value("${app.chat.top-k:5}") int topK) {
 		this.sessions = sessions;
@@ -70,6 +70,7 @@ public class ChatService {
 		this.sources = sources;
 		this.writer = writer;
 		this.aiClient = aiClient;
+		this.accessPolicy = accessPolicy;
 		this.maxQuestionLength = maxQuestionLength;
 		this.topK = topK;
 	}
@@ -123,6 +124,16 @@ public class ChatService {
 		}
 		Document document = source.getVersion().getDocument();
 		return !readable.computeIfAbsent(document.getId(), id -> canRead.test(document));
+	}
+
+	/**
+	 * 질의응답 < API 27 > - 읽을 수 있는 문서 안에서만 답한다
+	 * 질문·대화를 먼저 검증한 뒤 scope를 계산한다. 잘못된 요청이면 문서 조회조차 하지 않는다.
+	 */
+	public ChatAnswer ask(AppUser me, Long sessionId, String question) {
+		checkQuestion(question);
+		ownSession(me, sessionId);
+		return ask(me, sessionId, question, accessPolicy.accessibleVersionIds(me.getId()));
 	}
 
 	/**

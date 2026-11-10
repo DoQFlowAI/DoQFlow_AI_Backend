@@ -2,18 +2,26 @@ package com.rookies6.DoQFlowAI.service;
 
 import com.rookies6.DoQFlowAI.dto.response.CompareResponse;
 import com.rookies6.DoQFlowAI.dto.response.HistoryResponse;
+import com.rookies6.DoQFlowAI.entity.AppUser;
 import com.rookies6.DoQFlowAI.entity.Document;
 import com.rookies6.DoQFlowAI.entity.DocumentVersion;
 import com.rookies6.DoQFlowAI.entity.VersionStatus;
 import com.rookies6.DoQFlowAI.exception.VersionNotFoundException;
 import com.rookies6.DoQFlowAI.exception.VersionNotReadyException;
 import com.rookies6.DoQFlowAI.repository.DocumentVersionRepository;
+import com.rookies6.DoQFlowAI.security.AccessPolicy;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 변천사·두 버전 비교 < API 22, API 24 >
+ *
+ * 컨트롤러는 AppUser를 받는 메서드만 부른다. 읽기 권한(AccessPolicy.readOrNotFound)을 먼저 확인해
+ * 없는 문서와 권한 밖 문서는 모두 404다. LLM은 호출하지 않는다.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -21,6 +29,17 @@ public class VersionHistoryService {
 
 	private final DocumentVersionRepository versions;
 	private final DiffService diffService;
+	private final AccessPolicy accessPolicy;
+
+	/** 변천사 타임라인 < API 22 > - 읽기 권한 */
+	public HistoryResponse history(AppUser me, Long documentId) {
+		return history(accessPolicy.readOrNotFound(me.getId(), documentId));
+	}
+
+	/** 두 버전 비교 < API 24 > - 읽기 권한 */
+	public CompareResponse compare(AppUser me, Long documentId, int fromNo, int toNo) {
+		return compare(accessPolicy.readOrNotFound(me.getId(), documentId), fromNo, toNo);
+	}
 
 	public HistoryResponse history(Document document) {
 		List<DocumentVersion> all = versions.findByDocumentIdOrderByVersionNo(document.getId());

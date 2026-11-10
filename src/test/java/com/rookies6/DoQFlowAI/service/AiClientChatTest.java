@@ -19,6 +19,7 @@ import java.net.SocketTimeoutException;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -57,7 +58,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void 토큰과_근거를_끝까지_모아_돌려준다() {
+	@DisplayName("토큰과 근거를 끝까지 모아 돌려준다")
+	void collectsTokensAndSourcesUntilDone() {
 		server.expect(requestTo(BASE_URL + "/internal/chat"))
 				.andExpect(method(HttpMethod.POST))
 				.andExpect(header(RestClientConfig.INTERNAL_KEY_HEADER, KEY))
@@ -91,7 +93,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void 근거_없음이면_noAnswer로_돌려준다() {
+	@DisplayName("근거 없음이면 noAnswer로 돌려준다")
+	void returnsNoAnswerResult() {
 		respond("""
 				data: {"noAnswer": true}
 
@@ -106,7 +109,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void 모르는_필드와_주석_줄은_무시한다() {
+	@DisplayName("모르는 필드와 주석 줄은 무시한다")
+	void ignoresUnknownFieldsAndCommentLines() {
 		respond("""
 				: keep-alive
 				event: message
@@ -124,7 +128,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void error_이벤트는_502로_바꾼다() {
+	@DisplayName("error 이벤트는 502로 바꾼다")
+	void errorEventBecomes502() {
 		respond("""
 				data: {"token": "출장비는"}
 
@@ -138,7 +143,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void DONE_없이_끊긴_스트림은_502다() {
+	@DisplayName("DONE 없이 끊긴 스트림은 502다")
+	void streamWithoutDoneIs502() {
 		respond("""
 				data: {"token": "출장비는"}
 
@@ -148,7 +154,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void 근거_이벤트_없이_끝난_답변은_502다() {
+	@DisplayName("근거 이벤트 없이 끝난 답변은 502다")
+	void answerWithoutSourcesEventIs502() {
 		respond("""
 				data: {"token": "출장비는"}
 
@@ -160,7 +167,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void 읽을_수_없는_data는_502다() {
+	@DisplayName("읽을 수 없는 data는 502다")
+	void unreadableDataIs502() {
 		respond("""
 				data: not-json
 
@@ -172,7 +180,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void AI_Module의_4xx_5xx와_타임아웃은_502다() {
+	@DisplayName("AI Module의 4xx·5xx와 타임아웃은 502다")
+	void aiModuleErrorsAndTimeoutAre502() {
 		server.expect(requestTo(BASE_URL + "/internal/chat")).andRespond(withStatus(HttpStatus.BAD_REQUEST));
 		assertThatThrownBy(() -> aiClient.chat("질문", List.of(33L), 5)).isInstanceOf(AiModuleException.class);
 
@@ -187,7 +196,8 @@ class AiClientChatTest {
 	}
 
 	@Test
-	void scope가_비면_AI_Module에_요청을_보내지_않는다() {
+	@DisplayName("scope가 비면 AI Module에 요청을 보내지 않는다")
+	void doesNotCallAiModuleWithEmptyScope() {
 		assertThatThrownBy(() -> aiClient.chat("질문", List.of(), 5)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> aiClient.chat("질문", null, 5)).isInstanceOf(IllegalArgumentException.class);
 

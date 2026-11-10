@@ -9,6 +9,7 @@ import com.rookies6.DoQFlowAI.service.UploadFileValidator.ValidatedFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,7 +53,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void PDF와_DOCX를_순서대로_통과시키고_MIME과_해시를_정한다() {
+	@DisplayName("PDF와 DOCX를 순서대로 통과시키고 MIME과 해시를 정한다")
+	void acceptsPdfAndDocxInOrderWithMimeAndHash() {
 		List<ValidatedFile> result = validator.validate(List.of(pdf("v1.pdf", "a"), docx("v2.DOCX", "b")), null);
 
 		assertThat(result).extracting(ValidatedFile::originalFilename).containsExactly("v1.pdf", "v2.DOCX");
@@ -64,7 +66,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 텍스트_계열_8종은_UTF_8이면_통과하고_MIME은_확장자로_정한다() {
+	@DisplayName("텍스트 계열 8종은 UTF-8이면 통과하고 MIME은 확장자로 정한다")
+	void acceptsEightTextKindsWhenUtf8() {
 		List<MultipartFile> files = new ArrayList<>();
 		for (String ext : TEXT_EXT) {
 			files.add(text("v." + ext, "1. 목적\r\n\t이 지침은 " + ext + "\n"));
@@ -79,14 +82,16 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 한_요청에_두_계열이_섞여도_파일마다_판정한다() {
+	@DisplayName("한 요청에 두 계열이 섞여도 파일마다 판정한다")
+	void judgesEachFileInMixedRequest() {
 		List<ValidatedFile> result = validator.validate(List.of(pdf("v1.pdf", "a"), text("v2.md", "# b")), null);
 
 		assertThat(result).extracting(ValidatedFile::kind).containsExactly(FileKind.DOC, FileKind.TEXT);
 	}
 
 	@Test
-	void 파일이_없거나_10개를_넘으면_FILE_COUNT() {
+	@DisplayName("파일이 없거나 10개를 넘으면 FILE_COUNT")
+	void noFilesOrOverTenIsFileCount() {
 		assertRejected(List.of(), null, Reason.FILE_COUNT);
 		assertRejected(null, null, Reason.FILE_COUNT);
 
@@ -98,14 +103,16 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 빈_파일도_FILE_COUNT() {
+	@DisplayName("빈 파일도 FILE_COUNT")
+	void emptyFileIsFileCount() {
 		MockMultipartFile empty = new MockMultipartFile("files", "v1.pdf", "application/pdf", new byte[0]);
 		assertRejected(List.of(empty), null, Reason.FILE_COUNT);
 		assertRejected(List.of(text("v1.txt", new byte[0])), null, Reason.FILE_COUNT);
 	}
 
 	@Test
-	void 지원하지_않는_확장자나_위장_파일은_INVALID_TYPE() {
+	@DisplayName("지원하지 않는 확장자나 위장 파일은 INVALID_TYPE")
+	void unsupportedOrDisguisedFileIsInvalidType() {
 		assertRejected(List.of(pdf("noextension", "a")), null, Reason.INVALID_TYPE);
 		// 마크업으로 해석되는 형식은 일부러 받지 않는다 (저장형 XSS 방지)
 		assertRejected(List.of(text("v1.html", "<p>a</p>")), null, Reason.INVALID_TYPE);
@@ -115,7 +122,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 텍스트_계열이_UTF_8이_아니거나_제어문자가_있으면_INVALID_TYPE() {
+	@DisplayName("텍스트 계열이 UTF-8이 아니거나 제어문자가 있으면 INVALID_TYPE")
+	void nonUtf8OrControlCharTextIsInvalidType() {
 		// 확장자만 txt로 바꾼 PDF 바이너리 (0xE2 0xE3 ...는 올바른 UTF-8이 아님)
 		byte[] binary = {'%', 'P', 'D', 'F', '\n', (byte) 0xE2, (byte) 0xE3, (byte) 0xCF, (byte) 0xD3};
 		assertRejected(List.of(text("v1.txt", binary)), null, Reason.INVALID_TYPE);
@@ -128,7 +136,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 설정에서_뺀_확장자는_받지_않는다() {
+	@DisplayName("설정에서 뺀 확장자는 받지 않는다")
+	void rejectsExtensionRemovedFromConfig() {
 		UploadFileValidator docOnly = new UploadFileValidator(10, List.of(), DOC_EXT);
 
 		assertThatThrownBy(() -> docOnly.validate(List.of(text("v1.txt", "a")), null))
@@ -137,7 +146,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 파일당_20MB를_넘으면_FILE_TOO_LARGE() {
+	@DisplayName("파일당 20MB를 넘으면 FILE_TOO_LARGE")
+	void over20MbIsFileTooLarge() {
 		byte[] big = new byte[(int) UploadFileValidator.MAX_FILE_SIZE + 1];
 		big[0] = '%';
 		big[1] = 'P';
@@ -148,7 +158,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 경로가_들어간_파일명은_INVALID_FILENAME() {
+	@DisplayName("경로가 들어간 파일명은 INVALID_FILENAME")
+	void filenameWithPathIsInvalidFilename() {
 		assertRejected(List.of(pdf("../../etc/v1.pdf", "a")), null, Reason.INVALID_FILENAME);
 		assertRejected(List.of(pdf("..\\v1.pdf", "a")), null, Reason.INVALID_FILENAME);
 		assertRejected(List.of(pdf("C:v1.pdf", "a")), null, Reason.INVALID_FILENAME);
@@ -156,7 +167,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 직전_버전과_내용이_같으면_DUPLICATE_CONTENT() {
+	@DisplayName("직전 버전과 내용이 같으면 DUPLICATE_CONTENT")
+	void sameAsPreviousIsDuplicateContent() {
 		String previousHash = validator.validate(List.of(pdf("v1.pdf", "same")), null).get(0).contentHash();
 
 		// 이미 저장된 마지막 버전과 같은 경우
@@ -166,7 +178,8 @@ class UploadFileValidatorTest {
 	}
 
 	@Test
-	void 바로_앞이_아닌_예전_버전과_같은_내용은_허용한다() {
+	@DisplayName("바로 앞이 아닌 예전 버전과 같은 내용은 허용한다")
+	void allowsContentSameAsOlderVersion() {
 		List<ValidatedFile> result = validator.validate(
 				List.of(pdf("v1.pdf", "a"), pdf("v2.pdf", "b"), pdf("v3.pdf", "a")), null);
 

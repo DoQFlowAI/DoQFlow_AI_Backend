@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import org.apiguardian.api.API;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
@@ -26,7 +27,8 @@ class VersionFileStorageTest {
 	}
 
 	@Test
-	void 문서와_버전별_폴더에_UUID_파일명으로_저장한다() throws Exception {
+	@DisplayName("문서와 버전별 폴더에 UUID 파일명으로 저장한다")
+	void storesWithUuidNameInPerVersionFolder() throws Exception {
 		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
 		ValidatedFile file = validated("원본이름.pdf", "본문");
 
@@ -39,7 +41,8 @@ class VersionFileStorageTest {
 	}
 
 	@Test
-	void 저장한_파일을_삭제하고_없는_파일_삭제는_무시한다() {
+	@DisplayName("저장한 파일을 삭제하고 없는 파일 삭제는 무시한다")
+	void deletesStoredFileAndIgnoresMissing() {
 		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
 		String storedFilename = storage.store(7L, 1, validated("v1.pdf", "a"));
 
@@ -50,14 +53,16 @@ class VersionFileStorageTest {
 	}
 
 	@Test
-	void AI_Module에_넘길_경로는_업로드_디렉터리_기준_상대_경로다() {
+	@DisplayName("AI Module에 넘길 경로는 업로드 디렉터리 기준 상대 경로다")
+	void relativePathIsBasedOnUploadDir() {
 		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
 
 		assertThat(storage.relativePath(7L, 3, "5f1c.pdf")).isEqualTo("7/3/5f1c.pdf");
 	}
 
 	@Test
-	void 저장_파일명으로_업로드_디렉터리_밖을_가리킬_수_없다() {
+	@DisplayName("저장 파일명으로 업로드 디렉터리 밖을 가리킬 수 없다")
+	void storedFilenameCannotEscapeUploadDir() {
 		VersionFileStorage storage = new VersionFileStorage(uploadDir.toString());
 
 		org.assertj.core.api.Assertions.assertThatThrownBy(() -> storage.relativePath(7L, 3, "../../../etc/passwd"))

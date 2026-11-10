@@ -30,6 +30,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -87,7 +88,8 @@ class DeleteTest {
 	}
 
 	@Nested
-	class 버전_삭제 {
+	@DisplayName("버전 삭제")
+	class VersionDelete {
 
 		private VersionService service;
 		private DocumentVersion v1;
@@ -96,7 +98,7 @@ class DeleteTest {
 
 		@BeforeEach
 		void setUp() throws Exception {
-			service = new VersionService(documents, versions, null, storage, processor, 1_048_576);
+			service = new VersionService(documents, versions, null, storage, processor, null, 1_048_576);
 			v1 = version(11, 1, "a");
 			v2 = version(12, 2, "b");
 			v2.updateDiff("[]", 1);
@@ -107,7 +109,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 중간_버전을_지우면_뒤_버전_변경점을_비우고_앞뒤_구간을_다시_만든다() {
+		@DisplayName("중간 버전을 지우면 뒤 버전 변경점을 비우고 앞뒤 구간을 다시 만든다")
+		void deletingMiddleVersionClearsNextAndRebuildsSegment() {
 			service.deleteVersion(DOCUMENT_ID, 2);
 
 			verify(versions).delete(v2);
@@ -122,7 +125,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 최신_버전을_지우면_직전_버전이_최신이_되고_재색인한다() {
+		@DisplayName("최신 버전을 지우면 직전 버전이 최신이 되고 재색인한다")
+		void deletingLatestVersionPromotesPreviousAndReindexes() {
 			service.deleteVersion(DOCUMENT_ID, 3);
 
 			verify(versions).delete(v3);
@@ -133,7 +137,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 맨_앞_버전을_지우면_다음_버전이_v1_역할이라_변경점을_비운다() {
+		@DisplayName("맨 앞 버전을 지우면 다음 버전이 v1 역할이라 변경점을 비운다")
+		void deletingFirstVersionClearsNextChange() {
 			service.deleteVersion(DOCUMENT_ID, 1);
 
 			assertThat(v2.getChangeCount()).isNull();
@@ -142,7 +147,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 버전이_하나뿐이면_400() {
+		@DisplayName("버전이 하나뿐이면 400")
+		void onlyVersionIs400() {
 			when(versions.findByDocumentIdOrderByVersionNo(DOCUMENT_ID)).thenReturn(List.of(v1));
 
 			assertThatThrownBy(() -> service.deleteVersion(DOCUMENT_ID, 1))
@@ -153,7 +159,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 업로드_후처리_중이면_400() {
+		@DisplayName("업로드 후처리 중이면 400")
+		void processingIs400() {
 			document.changeStatus(DocumentStatus.PROCESSING);
 
 			assertThatThrownBy(() -> service.deleteVersion(DOCUMENT_ID, 2))
@@ -162,14 +169,16 @@ class DeleteTest {
 		}
 
 		@Test
-		void 없는_버전이면_404() {
+		@DisplayName("없는 버전이면 404")
+		void missingVersionIs404() {
 			assertThatThrownBy(() -> service.deleteVersion(DOCUMENT_ID, 9))
 					.isInstanceOf(VersionNotFoundException.class);
 		}
 	}
 
 	@Nested
-	class 버전_삭제_후처리 {
+	@DisplayName("버전 삭제 후처리")
+	class VersionDeleteProcessing {
 
 		private VersionProcessor realProcessor;
 
@@ -181,7 +190,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 끊어진_구간의_diff와_요약을_다시_만든다() throws Exception {
+		@DisplayName("끊어진 구간의 diff와 요약을 다시 만든다")
+		void rebuildsDiffAndSummaryOfBrokenSegment() throws Exception {
 			DocumentVersion v1 = version(11, 1, "a");
 			DocumentVersion v3 = version(13, 3, "c");
 			when(versions.findById(11L)).thenReturn(Optional.of(v1));
@@ -198,7 +208,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 새_최신_버전을_색인하고_나머지_벡터를_지운_뒤_READY() throws Exception {
+		@DisplayName("새 최신 버전을 색인하고 나머지 벡터를 지운 뒤 READY")
+		void indexesNewLatestThenRemovesOtherVectorsAndReady() throws Exception {
 			DocumentVersion v2 = version(12, 2, "b");
 			when(versions.findById(12L)).thenReturn(Optional.of(v2));
 			document.changeStatus(DocumentStatus.PROCESSING);
@@ -211,7 +222,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 재색인에_실패하면_문서_FAILED() throws Exception {
+		@DisplayName("재색인에 실패하면 문서 FAILED")
+		void reindexFailureMarksDocumentFailed() throws Exception {
 			DocumentVersion v2 = version(12, 2, "b");
 			when(versions.findById(12L)).thenReturn(Optional.of(v2));
 			when(ai.index(anyLong(), anyLong(), anyInt())).thenThrow(new AiModuleException("down"));
@@ -224,17 +236,19 @@ class DeleteTest {
 	}
 
 	@Nested
-	class 문서_삭제 {
+	@DisplayName("문서 삭제")
+	class DocumentDelete {
 
 		private DocumentService service;
 
 		@BeforeEach
 		void setUp() {
-			service = new DocumentService(documents, versions, storage, ai);
+			service = new DocumentService(documents, versions, storage, ai, null);
 		}
 
 		@Test
-		void 문서_행을_지우고_커밋_뒤_벡터_전체와_저장_폴더를_지운다() throws Exception {
+		@DisplayName("문서 행을 지우고 커밋 뒤 벡터 전체와 저장 폴더를 지운다")
+		void deletesRowThenVectorsAndFolderAfterCommit() throws Exception {
 			DocumentVersion v1 = version(11, 1, "a");
 			version(12, 2, "b");
 
@@ -247,7 +261,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 벡터_삭제가_실패해도_삭제는_끝난다() {
+		@DisplayName("벡터 삭제가 실패해도 삭제는 끝난다")
+		void completesEvenIfVectorDeleteFails() {
 			when(ai.deleteIndex(DOCUMENT_ID, null)).thenThrow(new AiModuleException("down"));
 
 			service.delete(DOCUMENT_ID);
@@ -256,7 +271,8 @@ class DeleteTest {
 		}
 
 		@Test
-		void 업로드_후처리_중이면_400() {
+		@DisplayName("업로드 후처리 중이면 400")
+		void processingIs400() {
 			document.changeStatus(DocumentStatus.PROCESSING);
 
 			assertThatThrownBy(() -> service.delete(DOCUMENT_ID)).isInstanceOf(DeleteNotAllowedException.class);
@@ -264,14 +280,16 @@ class DeleteTest {
 		}
 
 		@Test
-		void 없는_문서면_404() {
+		@DisplayName("없는 문서면 404")
+		void missingDocumentIs404() {
 			when(documents.findById(99L)).thenReturn(Optional.empty());
 
 			assertThatThrownBy(() -> service.delete(99L)).isInstanceOf(DocumentNotFoundException.class);
 		}
 
 		@Test
-		void 저장_폴더가_없어도_오류가_아니다() {
+		@DisplayName("저장 폴더가 없어도 오류가 아니다")
+		void missingFolderIsNotAnError() {
 			storage.deleteDocument(12345L);
 		}
 	}
