@@ -30,6 +30,10 @@ import java.security.MessageDigest;
 
 import org.springframework.beans.factory.annotation.Value;
 
+import com.rookies6.DoQFlowAI.entity.AuditEventType;
+import com.rookies6.DoQFlowAI.entity.AuditResult;
+import com.rookies6.DoQFlowAI.exception.AccountLockedException;
+
 /** 인증 < API 4.1~4.4 > */
 @Service
 @Transactional(readOnly = true)
@@ -40,19 +44,22 @@ public class AuthService {
 	private final RefreshTokenRepository tokens;
 	private final JwtProvider jwtProvider;
 	private final LoginAttemptService loginAttempt;
+	private final AuditService audit;
 	private final long refreshExpirationMillis;
 
-  public AuthService(AppUserRepository users,
-			RefreshTokenRepository tokens,
-			PasswordEncoder passwordEncoder,
-			JwtProvider jwtProvider,
-			LoginAttemptService loginAttempt,
-			@Value("${jwt.refresh-expiration}") long refreshExpirationMillis) {
+	public AuthService(AppUserRepository users,
+					   RefreshTokenRepository tokens,
+					   PasswordEncoder passwordEncoder,
+					   JwtProvider jwtProvider,
+					   LoginAttemptService loginAttempt,
+					   AuditService audit,
+					   @Value("${jwt.refresh-expiration}") long refreshExpirationMillis) {
 		this.users = users;
 		this.tokens = tokens;
 		this.passwordEncoder = passwordEncoder;
 		this.jwtProvider = jwtProvider;
 		this.loginAttempt = loginAttempt;
+		this.audit = audit;
 		this.refreshExpirationMillis = refreshExpirationMillis;
 	}
 
@@ -77,25 +84,44 @@ public class AuthService {
 		return SignupResponse.of(users.save(user));
 	}
 
-  /**
+	/**
 	 * 로그인 < API 4.2 >
 	 *
 	 * <p>미가입과 비밀번호 불일치에 같은 예외를 쓴다. 응답이 갈리면
 	 * 그 이메일이 가입돼 있는지 확인하는 수단이 된다.
+	 *
+	 * <p>감사 로그의 detail에는 마스킹한 이메일만 넣는다. 비밀번호는 넣지 않는다.
 	 */
 	@Transactional
 	public TokenResponse login(LoginRequest req) {
-		AppUser user = users.findByEmail(req.email())
-				.orElseThrow(() -> new InvalidCredentialsException("no such email"));
+		String masked = AuditService.maskEmail(req.email());
 
-		loginAttempt.checkLocked(user);
+		AppUser user = users.findByEmail(req.email()).orElse(null);
+		if (user == null) {
+			// 행위자를 특정할 수 없다. actorUserId는 null
+			audit.log(AuditEventType.LOGIN_FAILURE, AuditResult.FAILURE,
+					null, null, null, "no such email: " + masked);
+			throw new InvalidCredentialsException("no such email");
+		}
+
+		try {
+			loginAttempt.checkLocked(user);
+		} catch (AccountLockedException e) {
+			audit.log(AuditEventType.LOGIN_FAILURE, AuditResult.FAILURE,
+					user.getId(), "APP_USER", user.getId(), "account locked: " + masked);
+			throw e;
+		}
 
 		if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
 			loginAttempt.recordFailure(user.getId());
+			audit.log(AuditEventType.LOGIN_FAILURE, AuditResult.FAILURE,
+					user.getId(), "APP_USER", user.getId(), "password mismatch: " + masked);
 			throw new InvalidCredentialsException("password mismatch: userId=" + user.getId());
 		}
 
 		loginAttempt.recordSuccess(user);
+		audit.log(AuditEventType.LOGIN_SUCCESS, AuditResult.SUCCESS,
+				user.getId(), "APP_USER", user.getId(), "login: " + masked);
 		return issueTokens(user);
 	}
 
