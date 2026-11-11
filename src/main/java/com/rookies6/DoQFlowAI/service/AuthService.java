@@ -170,8 +170,11 @@ public class AuthService {
 	 *
 	 * <p>없는 토큰·만료·폐기를 모두 401로 통일한다. 구분해 응답하면
 	 * 토큰이 존재하는지 확인하는 수단이 된다.
+	 *
+	 * <p><b>401을 던져도 롤백하지 않는다.</b> 재사용 탐지의 전부 폐기(revokeAllByUserId) 뒤에 예외를 던지므로,
+	 * 롤백하면 폐기가 취소되어 공격자의 토큰이 살아남는다. 다른 401(없는 토큰·만료)은 DB를 바꾸기 전에 던진다.
 	 */
-	@Transactional
+	@Transactional(noRollbackFor = BusinessException.class)
 	public TokenResponse refresh(TokenRequest req) {
 		RefreshToken token = tokens.findByTokenHash(sha256(req.refreshToken()))
 				.orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "unknown refresh token"));

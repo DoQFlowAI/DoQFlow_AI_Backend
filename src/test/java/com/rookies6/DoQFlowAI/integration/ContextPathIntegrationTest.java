@@ -63,4 +63,27 @@ class ContextPathIntegrationTest {
 		assertThat(response.statusCode()).isEqualTo(200);
 		assertThat(response.body()).contains("UP");
 	}
+
+	private HttpResponse<String> postJson(String path, String json) throws Exception {
+		HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+				.header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(json)).build();
+		return http.send(request, HttpResponse.BodyHandlers.ofString());
+	}
+
+	@Test
+	@DisplayName("Refresh Token 쿠키는 /api/auth 경로에만 보내지도록 내려간다")
+	void refreshCookiePathIncludesApiPrefix() throws Exception {
+		String email = "staff-" + java.util.UUID.randomUUID().toString().substring(0, 8) + "@example.com";
+		String credentials = "{\"email\":\"" + email + "\",\"password\":\"Passw0rd!2026\"";
+		assertThat(postJson("/api/auth/signup", credentials + ",\"name\":\"staff\",\"rankLevel\":1}").statusCode())
+				.isEqualTo(201);
+
+		HttpResponse<String> login = postJson("/api/auth/login", credentials + "}");
+
+		assertThat(login.statusCode()).isEqualTo(200);
+		assertThat(login.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie -> assertThat(cookie)
+				.startsWith("doq_refresh=").contains("Path=/api/auth", "HttpOnly", "SameSite=Strict"));
+		assertThat(login.body()).doesNotContain("refreshToken");
+	}
 }

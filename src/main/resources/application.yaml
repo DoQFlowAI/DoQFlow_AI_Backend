@@ -50,6 +50,8 @@ ai:
 app:
   upload-dir: ${UPLOAD_DIR:/app/uploads}
   login: { max-failures: 5, lock-minutes: 15 }
+  # Refresh Token 쿠키의 Secure (HTTPS에서만 전송). HTTPS 없이 IP로 접속하는 환경에서만 false로 끈다
+  auth.refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
   upload:
     max-files: 10
     text-ext: "txt,md,csv,json,xml,yaml,yml,log"
