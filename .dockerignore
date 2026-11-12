@@ -1,0 +1,19 @@
+# 이미지 빌드에 필요한 것은 pom.xml과 src뿐이다. 나머지는 보내지 않는다
+# 비밀값
+.env
+.env.*
+*.pem
+*.key
+
+# 빌드 산출물·로컬 파일
+target/
+uploads/
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE·Git
+.git/
+.github/
+.idea/
+.vscode/
+*.iml
+HELP.md

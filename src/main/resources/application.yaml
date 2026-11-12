@@ -1,3 +1,69 @@
+server:
+  port: 8080
+  # 모든 API가 /api 아래에 있다. 화면은 /api로만 요청한다 (Frontend 개발 명세서 3장).
+  # 컨트롤러 경로에는 /api를 쓰지 않는다 (API 설계서의 경로 표기와 같음: /documents = /api/documents)
+  servlet.context-path: /api
+  # 종료 신호를 받으면 새 요청을 받지 않고 진행 중인 요청을 마친 뒤 끈다.
+  # 업로드 후처리 스레드풀은 AsyncConfig에서 최대 60초 기다린다. 그래도 끊긴 작업은 ProcessingRecovery가 기동 시 정리한다
+  shutdown: graceful
+  error:
+    include-stacktrace: never
+    include-message: never
+
 spring:
   application:
     name: DoQFlowAI
+  config:
+    import: "optional:file:.env[.properties]"
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate.ddl-auto: validate
+    open-in-view: false
+    properties.hibernate.jdbc.batch_size: 50
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # 마이그레이션은 DDL 권한이 있는 계정으로 한다 (DB 설계서 9장: 앱 계정은 DML만).
+    # FLYWAY_USER가 없으면(로컬) 앱 계정을 쓴다. url은 비워 두면 datasource와 같은 DB를 쓴다
+    user: ${FLYWAY_USER:${spring.datasource.username}}
+    password: ${FLYWAY_PASSWORD:${spring.datasource.password}}
+  servlet.multipart:
+    max-file-size: 20MB
+    max-request-size: 220MB
+  task.execution.mode: force
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-expiration: 900000        # 15분
+  refresh-expiration: 1209600000   # 14일
+
+ai:
+  base-url: ${AI_BASE_URL:http://ai-module:8000}
+  internal-key: ${AI_INTERNAL_KEY}
+  connect-timeout: 3s
+  read-timeout: 60s
+  history-read-timeout: 180s   # /internal/history만 (구간마다 LLM 호출·재시도)
+
+app:
+  upload-dir: ${UPLOAD_DIR:/app/uploads}
+  login: { max-failures: 5, lock-minutes: 15 }
+  # Refresh Token 쿠키의 Secure (HTTPS에서만 전송). HTTPS 없이 IP로 접속하는 환경에서만 false로 끈다
+  auth.refresh-cookie-secure: ${REFRESH_COOKIE_SECURE:true}
+  upload:
+    max-files: 10
+    text-ext: "txt,md,csv,json,xml,yaml,yml,log"
+    doc-ext: "pdf,docx"                             # 추출 필요
+    view-max-bytes: 1048576                         # 원문 보기 응답 상한 1MB
+  rate-limit: { chat-per-minute: 20, lookup-per-minute: 30 }
+  chat: { max-question-length: 1000, top-k: 5 }
+  cors.allowed-origins: ${CORS_ORIGINS}
+  signup.lead-key: ${SIGNUP_KEY_LEAD}
+
+logging:
+  level:
+    org.hibernate.orm.connections.pooling: WARN
+
+management.endpoints.web.exposure.include: ${ACTUATOR_EXPOSURE:health,info}
